@@ -8,23 +8,25 @@
 #include "pytorch_cuda_helper.hpp"
 #endif
 
+#define HOST_DEVICE __host__ __device__
+
 #define MAXN 100
 #define NMAX 512
 __device__ const double EPS = 1E-8;
 
-__device__ inline int sig(double d) { return (d > EPS) - (d < -EPS); }
+HOST_DEVICE inline int sig(double d) { return (d > EPS) - (d < -EPS); }
 
 struct Point {
   double x, y;
-  __device__ Point() {}
-  __device__ Point(double x, double y) : x(x), y(y) {}
+  HOST_DEVICE Point() {}
+  HOST_DEVICE Point(double x, double y) : x(x), y(y) {}
 };
 
-__device__ inline bool point_same(Point& a, Point& b) {
+HOST_DEVICE inline bool point_same(Point& a, Point& b) {
   return sig(a.x - b.x) == 0 && sig(a.y - b.y) == 0;
 }
 
-__device__ inline void swap1(Point* a, Point* b) {
+HOST_DEVICE inline void swap1(Point* a, Point* b) {
   Point temp;
   temp.x = a->x;
   temp.y = a->y;
@@ -36,7 +38,7 @@ __device__ inline void swap1(Point* a, Point* b) {
   b->y = temp.y;
 }
 
-__device__ inline void reverse1(Point* a, const int n) {
+HOST_DEVICE inline void reverse1(Point* a, const int n) {
   for (int i = 0; i < (n - 1) / 2.0; i++) {
     Point* j = &(a[i]);
     Point* k = &(a[n - 1 - i]);
@@ -44,14 +46,14 @@ __device__ inline void reverse1(Point* a, const int n) {
   }
 }
 
-__device__ inline double cross(Point o, Point a, Point b) {
+HOST_DEVICE inline double cross(Point o, Point a, Point b) {
   return (a.x - o.x) * (b.y - o.y) - (b.x - o.x) * (a.y - o.y);
 }
 
-__device__ inline double dis(Point a, Point b) {
+HOST_DEVICE inline double dis(Point a, Point b) {
   return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
 }
-__device__ inline double area(Point* ps, int n) {
+HOST_DEVICE inline double area(Point* ps, int n) {
   ps[n] = ps[0];
   double res = 0;
   for (int i = 0; i < n; i++) {
@@ -59,7 +61,7 @@ __device__ inline double area(Point* ps, int n) {
   }
   return res / 2.0;
 }
-__device__ inline double polygon_area_grad(Point* ps, int n,
+HOST_DEVICE inline double polygon_area_grad(Point* ps, int n,
                                            int* polygon_to_pred_index,
                                            int n_pred, double* grad_C) {
   ps[n] = ps[0];
@@ -97,7 +99,7 @@ __device__ inline double polygon_area_grad(Point* ps, int n,
   return res / 2.0;
 }
 
-__device__ inline int lineCross(Point a, Point b, Point c, Point d, Point& p,
+HOST_DEVICE inline int lineCross(Point a, Point b, Point c, Point d, Point& p,
                                 double* cut_grad, int m, int n, int i) {
   double s1, s2;
   double s2_s1_2;
@@ -165,7 +167,7 @@ __device__ inline int lineCross(Point a, Point b, Point c, Point d, Point& p,
 
   return 1;
 }
-__device__ inline void polygon_cut(Point* p, int& n, Point a, Point b,
+HOST_DEVICE inline void polygon_cut(Point* p, int& n, Point a, Point b,
                                    double* cut_grad) {
   Point pp[MAXN];
   double ccur_grad[MAXN] = {};
@@ -199,7 +201,7 @@ __device__ inline void polygon_cut(Point* p, int& n, Point a, Point b,
   while (n > 1 && point_same(p[n - 1], p[0])) n--;
 }
 
-__device__ inline double intersectArea(Point a, Point b, Point c, Point d,
+HOST_DEVICE inline double intersectArea(Point a, Point b, Point c, Point d,
                                        double* grad_AB, int order,
                                        int convex_n) {
   Point o(0, 0);
@@ -379,7 +381,7 @@ __device__ inline double intersectArea(Point a, Point b, Point c, Point d,
   return res;
 }
 
-__device__ inline double intersectAreaO(Point* ps1, int n1, Point* ps2, int n2,
+HOST_DEVICE inline double intersectAreaO(Point* ps1, int n1, Point* ps2, int n2,
                                         double* grad_AB) {
   if (area(ps1, n1) < 0) reverse1(ps1, n1);
   if (area(ps2, n2) < 0) reverse1(ps2, n2);
@@ -395,7 +397,7 @@ __device__ inline double intersectAreaO(Point* ps1, int n1, Point* ps2, int n2,
   return res;
 }
 
-__device__ inline void Jarvis(Point* in_poly, int& n_poly) {
+HOST_DEVICE inline void Jarvis(Point* in_poly, int& n_poly) {
   Point p_max, p_k;
   int max_index, k_index;
   int Stack[NMAX] = {}, top1, top2;
@@ -470,7 +472,7 @@ __device__ inline void Jarvis(Point* in_poly, int& n_poly) {
   n_poly = top1 + top2;
 }
 
-__device__ inline double intersectAreaPoly(Point* ps1, int n1, Point* ps2,
+HOST_DEVICE inline double intersectAreaPoly(Point* ps1, int n1, Point* ps2,
                                            int n2, double* grad_C) {
   Point polygon[MAXN];
   int n = n1 + n2, n_poly = 0;
@@ -528,7 +530,7 @@ __device__ inline double intersectAreaPoly(Point* ps1, int n1, Point* ps2,
 }
 
 // convex_find and get the polygon_index_box_index
-__device__ inline void Jarvis_and_index(Point* in_poly, int& n_poly,
+HOST_DEVICE inline void Jarvis_and_index(Point* in_poly, int& n_poly,
                                         int* points_to_convex_ind) {
   int n_input = n_poly;
   Point input_poly[20];
@@ -623,7 +625,7 @@ __device__ inline void Jarvis_and_index(Point* in_poly, int& n_poly,
 }
 
 template <typename T>
-__device__ inline float devrIoU(T const* const p, T const* const q,
+HOST_DEVICE inline float devrIoU(T const* const p, T const* const q,
                                 T* point_grad, const int idx) {
   Point ps1[MAXN], ps2[MAXN];
 
@@ -713,7 +715,7 @@ __global__ void convex_giou_cuda_kernel(const int ex_n_boxes,
   }
 }
 
-__device__ inline int lineCross(Point a, Point b, Point c, Point d, Point& p) {
+HOST_DEVICE inline int lineCross(Point a, Point b, Point c, Point d, Point& p) {
   double s1, s2;
   s1 = cross(a, b, c);
   s2 = cross(a, b, d);
@@ -724,7 +726,7 @@ __device__ inline int lineCross(Point a, Point b, Point c, Point d, Point& p) {
   return 1;
 }
 
-__device__ inline void polygon_cut(Point* p, int& n, Point a, Point b) {
+HOST_DEVICE inline void polygon_cut(Point* p, int& n, Point a, Point b) {
   Point pp[MAXN];
   int m = 0;
   p[n] = p[0];
@@ -749,7 +751,7 @@ __device__ inline void polygon_cut(Point* p, int& n, Point a, Point b) {
   while (n > 1 && point_same(p[n - 1], p[0])) n--;
 }
 
-__device__ inline double intersectArea(Point a, Point b, Point c, Point d) {
+HOST_DEVICE inline double intersectArea(Point a, Point b, Point c, Point d) {
   Point o(0, 0);
   int s1 = sig(cross(o, a, b));
   int s2 = sig(cross(o, c, d));
@@ -774,7 +776,7 @@ __device__ inline double intersectArea(Point a, Point b, Point c, Point d) {
   if (s1 * s2 == -1) res = -res;
   return res;
 }
-__device__ inline double intersectAreaO(Point* ps1, int n1, Point* ps2,
+HOST_DEVICE inline double intersectAreaO(Point* ps1, int n1, Point* ps2,
                                         int n2) {
   if (area(ps1, n1) < 0) reverse1(ps1, n1);
   if (area(ps2, n2) < 0) reverse1(ps2, n2);
@@ -790,7 +792,7 @@ __device__ inline double intersectAreaO(Point* ps1, int n1, Point* ps2,
 }
 
 template <typename T>
-__device__ inline float devrIoU(T const* const p, T const* const q) {
+HOST_DEVICE inline float devrIoU(T const* const p, T const* const q) {
   Point ps1[MAXN], ps2[MAXN];
   Point convex[MAXN];
   for (int i = 0; i < 9; i++) {

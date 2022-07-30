@@ -19,7 +19,10 @@ set( CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=${CUDA_ARCH}
                         -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ 
                         -D_GLIBCXX_USE_CXX11_ABI=1 -lpthread" )
  
-cuda_add_executable(cuda_gtest main.cc src/example_test.cu)
-target_link_libraries(cuda_gtest pthread)
-target_link_libraries(cuda_gtest libgtest.a ${TORCH_LIBRARIES})
+cuda_add_executable(example_cuda_gtest main.cc src/example_test.cu)
+target_link_libraries(example_cuda_gtest pthread)
+target_link_libraries(example_cuda_gtest libgtest.a ${TORCH_LIBRARIES})
 
+cuda_add_executable(convex_gtest main.cc src/convex_test.cu)
+target_link_libraries(convex_gtest pthread)
+target_link_libraries(convex_gtest libgtest.a ${TORCH_LIBRARIES})
