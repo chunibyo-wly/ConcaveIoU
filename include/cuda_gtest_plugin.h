@@ -41,6 +41,13 @@ struct TestTransporter
 		transporter->evaluateFloat++;
 	}
 
+	template<> __host__ __device__ void setTestTransporterValue( TestTransporter* transporter, double expected, double actual )
+	{
+		transporter->tfloat[transporter->evaluateFloat].x = expected;
+		transporter->tfloat[transporter->evaluateFloat].y = actual;
+		transporter->evaluateFloat++;
+	}
+
 	template<> __host__ __device__ void setTestTransporterValue( TestTransporter* transporter, int expected, int actual )
 	{
 		transporter->tint[transporter->evaluateInt].x = expected;
