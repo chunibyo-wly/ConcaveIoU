@@ -26,3 +26,7 @@ target_link_libraries(example_cuda_gtest libgtest.a ${TORCH_LIBRARIES})
 cuda_add_executable(convex_gtest main.cc src/convex_test.cu)
 target_link_libraries(convex_gtest pthread)
 target_link_libraries(convex_gtest libgtest.a ${TORCH_LIBRARIES})
+
+cuda_add_executable(concave_gtest main.cc src/concave_test.cu)
+target_link_libraries(concave_gtest pthread)
+target_link_libraries(concave_gtest libgtest.a ${TORCH_LIBRARIES})
