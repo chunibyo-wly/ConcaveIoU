@@ -41,4 +41,9 @@ CUDA_TEST(concave_iou, check_pts_equal) {
               false);
 }
 
+CUDA_TEST(Delaunator, Delaunator) {
+    double _points[20] = {1., 2.};
+    Delaunator delaunator(_points);
+}
+
 #endif

@@ -105,4 +105,54 @@ HOST_DEVICE_INLINE bool check_pts_equal(double x1, double y1, double x2,
     return std::fabs(x1 - x2) <= EPSILON && std::fabs(y1 - y2) <= EPSILON;
 }
 
+// monotonically increases with real angle, but doesn't need expensive
+// trigonometry
+HOST_DEVICE_INLINE double pseudo_angle(const double dx, const double dy) {
+    const double p = dx / (std::abs(dx) + std::abs(dy));
+    return (dy > 0.0 ? 3.0 - p : 1.0 + p) / 4.0; // [0..1)
+}
+
+struct DelaunatorPoint {
+    std::size_t i;
+    double x;
+    double y;
+    std::size_t t;
+    std::size_t prev;
+    std::size_t next;
+    bool removed;
+};
+
+#define POINTS_NUMBER 20
+const int MAX_TRIANGLES = POINTS_NUMBER < 3 ? 1 : 2 * POINTS_NUMBER - 5;
+struct Delaunator {
+  public:
+    double coords[POINTS_NUMBER * 2];
+    std::size_t triangles[MAX_TRIANGLES * 3];
+    std::size_t halfedges[MAX_TRIANGLES * 3];
+    std::size_t *hull_prev;
+    std::size_t *hull_next;
+    std::size_t *hull_tri;
+    std::size_t hull_start;
+
+    HOST_DEVICE_INLINE Delaunator(double *in_coords);
+
+    double get_hull_area();
+
+  private:
+    std::size_t *m_hash;
+    double m_center_x;
+    double m_center_y;
+    std::size_t m_hash_size;
+    std::size_t *m_edge_stack;
+
+    HOST_DEVICE_INLINE std::size_t legalize(std::size_t a);
+    HOST_DEVICE_INLINE std::size_t hash_key(double x, double y);
+    HOST_DEVICE_INLINE std::size_t add_triangle(std::size_t i0, std::size_t i1,
+                                                std::size_t i2, std::size_t a,
+                                                std::size_t b, std::size_t c);
+    HOST_DEVICE_INLINE void link(std::size_t a, std::size_t b);
+};
+
+HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords) {}
+
 // Delaunator
