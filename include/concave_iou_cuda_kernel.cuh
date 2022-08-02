@@ -4,6 +4,18 @@
 // Delaunator
 // https://github.com/delfrrr/delaunator-cpp
 
+HOST_DEVICE_INLINE void swap_size_t(std::size_t &x, std::size_t &y) {
+    std::size_t tmp = x;
+    x = y;
+    y = tmp;
+}
+
+HOST_DEVICE_INLINE void swap_double(double &x, double &y) {
+    double tmp = x;
+    x = y;
+    y = tmp;
+}
+
 // https://stackoverflow.com/questions/33333363/built-in-mod-vs-custom-mod-function-improve-the-performance-of-modulus-op/33333636#33333636
 HOST_DEVICE_INLINE size_t fast_mod(const size_t i, const size_t c) {
     return i >= c ? i % c : i;
@@ -134,7 +146,7 @@ struct Delaunator {
     std::size_t *hull_tri;
     std::size_t hull_start;
 
-    HOST_DEVICE_INLINE Delaunator(double *in_coords);
+    HOST_DEVICE_INLINE Delaunator(double *in_coords, const std::size_t length);
 
     double get_hull_area();
 
@@ -153,6 +165,102 @@ struct Delaunator {
     HOST_DEVICE_INLINE void link(std::size_t a, std::size_t b);
 };
 
-HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords) {}
+HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
+                                          const std::size_t length) {
+
+    std::size_t n = length / 2;
+
+    double max_x = std::numeric_limits<double>::min();
+    double max_y = std::numeric_limits<double>::min();
+    double min_x = std::numeric_limits<double>::max();
+    double min_y = std::numeric_limits<double>::max();
+
+    std::size_t ids[POINTS_NUMBER];
+
+    for (std::size_t i = 0; i < n; i++) {
+        const double x = coords[2 * i];
+        const double y = coords[2 * i + 1];
+
+        if (x < min_x)
+            min_x = x;
+        if (y < min_y)
+            min_y = y;
+        if (x > max_x)
+            max_x = x;
+        if (y > max_y)
+            max_y = y;
+
+        ids[i] = i;
+    }
+
+    const double cx = (min_x + max_x) / 2;
+    const double cy = (min_y + max_y) / 2;
+    double min_dist = std::numeric_limits<double>::max();
+
+    std::size_t i0 = INVALID_INDEX;
+    std::size_t i1 = INVALID_INDEX;
+    std::size_t i2 = INVALID_INDEX;
+
+    // pick a seed point close to the centroid
+    for (std::size_t i = 0; i < n; i++) {
+        const double d = dist(cx, cy, coords[2 * i], coords[2 * i + 1]);
+        if (d < min_dist) {
+            i0 = i;
+            min_dist = d;
+        }
+    }
+
+    const double i0x = coords[2 * i0];
+    const double i0y = coords[2 * i0 + 1];
+
+    min_dist = std::numeric_limits<double>::max();
+
+    // find the point closest to the seed
+    for (std::size_t i = 0; i < n; i++) {
+        if (i == i0)
+            continue;
+        const double d = dist(i0x, i0y, coords[2 * i], coords[2 * i + 1]);
+        if (d < min_dist && d > 0.0) {
+            i1 = i;
+            min_dist = d;
+        }
+    }
+
+    double i1x = coords[2 * i1];
+    double i1y = coords[2 * i1 + 1];
+
+    double min_radius = std::numeric_limits<double>::max();
+
+    // find the third point which forms the smallest circumcircle with the first
+    // two
+    for (std::size_t i = 0; i < n; i++) {
+        if (i == i0 || i == i1)
+            continue;
+
+        const double r =
+            circumradius(i0x, i0y, i1x, i1y, coords[2 * i], coords[2 * i + 1]);
+
+        if (r < min_radius) {
+            i2 = i;
+            min_radius = r;
+        }
+    }
+
+    if (!(min_radius < std::numeric_limits<double>::max())) {
+        // TODO: throw CUDA error
+        // throw std::runtime_error("not triangulation");
+    }
+
+    double i2x = coords[2 * i2];
+    double i2y = coords[2 * i2 + 1];
+
+    if (orient(i0x, i0y, i1x, i1y, i2x, i2y)) {
+        swap_size_t(i1, i2);
+        swap_double(i1x, i2x);
+        swap_double(i1y, i2y);
+    }
+
+    circumcenter(i0x, i0y, i1x, i1y, i2x, i2y, m_center_x, m_center_y);
+}
 
 // Delaunator
