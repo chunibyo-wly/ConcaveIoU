@@ -140,25 +140,32 @@ struct Delaunator {
   public:
     double coords[POINTS_NUMBER * 2];
     std::size_t triangles[MAX_TRIANGLES * 3];
+    std::size_t triangles_size;
+
     std::size_t halfedges[MAX_TRIANGLES * 3];
-    std::size_t hull_prev[POINTS_NUMBER];
-    std::size_t hull_next[POINTS_NUMBER];
-    std::size_t hull_tri[POINTS_NUMBER];
+    std::size_t halfedges_size;
+
+    std::size_t hull_prev[POINTS_NUMBER * 2];
+    std::size_t hull_next[POINTS_NUMBER * 2];
+    std::size_t hull_tri[POINTS_NUMBER * 2];
     std::size_t hull_start;
 
     HOST_DEVICE_INLINE Delaunator(double *in_coords, const std::size_t length);
 
-    double get_hull_area();
+    HOST_DEVICE_INLINE double get_hull_area();
 
   private:
     std::size_t m_hash[POINTS_NUMBER];
     double m_center_x;
     double m_center_y;
     std::size_t m_hash_size;
-    std::size_t *m_edge_stack;
+
+    std::size_t m_edge_stack[MAX_TRIANGLES * 3];
+    std::size_t m_edge_stack_size;
 
     HOST_DEVICE_INLINE std::size_t legalize(std::size_t a);
-    HOST_DEVICE_INLINE std::size_t hash_key(double x, double y);
+    HOST_DEVICE_INLINE std::size_t hash_key(const double x,
+                                            const double y) const;
     HOST_DEVICE_INLINE std::size_t add_triangle(std::size_t i0, std::size_t i1,
                                                 std::size_t i2, std::size_t a,
                                                 std::size_t b, std::size_t c);
@@ -174,6 +181,9 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     for (size_t i = 0; i < length; i++)
         coords[i] = in_coords[i];
     std::size_t n = length / 2;
+    halfedges_size = 0;
+    triangles_size = 0;
+    m_edge_stack_size = 0;
 
     // initialize
 
@@ -300,6 +310,101 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     m_hash[hash_key(i0x, i0y)] = i0;
     m_hash[hash_key(i1x, i1y)] = i1;
     m_hash[hash_key(i2x, i2y)] = i2;
+
+    add_triangle(i0, i1, i2, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX);
+    double xp = std::numeric_limits<double>::quiet_NaN();
+    double yp = std::numeric_limits<double>::quiet_NaN();
+
+    for (std::size_t k = 0; k < n; k++) {
+        const std::size_t i = ids[k];
+        const double x = coords[2 * i];
+        const double y = coords[2 * i + 1];
+
+        // skip near-duplicate points
+        if (k > 0 && check_pts_equal(x, y, xp, yp))
+            continue;
+        xp = x;
+        yp = y;
+
+        // skip seed triangle points
+        if (check_pts_equal(x, y, i0x, i0y) ||
+            check_pts_equal(x, y, i1x, i1y) || check_pts_equal(x, y, i2x, i2y))
+            continue;
+
+        // find a visible edge on the convex hull using edge hash
+        std::size_t start = 0;
+
+        size_t key = hash_key(x, y);
+        for (size_t j = 0; j < m_hash_size; j++) {
+            start = m_hash[fast_mod(key + j, m_hash_size)];
+            if (start != INVALID_INDEX && start != hull_next[start])
+                break;
+        }
+
+        start = hull_prev[start];
+        size_t e = start;
+        size_t q;
+
+        while (q = hull_next[e], !orient(x, y, coords[2 * e], coords[2 * e + 1],
+                                         coords[2 * q], coords[2 * q + 1])) {
+            // TODO: does it works in a same way as in JS
+            e = q;
+            if (e == start) {
+                e = INVALID_INDEX;
+                break;
+            }
+        }
+
+        if (e == INVALID_INDEX)
+            continue; // likely a near-duplicate point; skip it
+
+        // add the first triangle from the point
+        std::size_t t = add_triangle(e, i, hull_next[e], INVALID_INDEX,
+                                     INVALID_INDEX, hull_tri[e]);
+
+        hull_tri[i] = legalize(t + 2);
+        hull_tri[e] = t;
+        hull_size++;
+
+        // walk forward through the hull, adding more triangles and flipping
+        // recursively
+        std::size_t next = hull_next[e];
+        while (q = hull_next[next],
+               orient(x, y, coords[2 * next], coords[2 * next + 1],
+                      coords[2 * q], coords[2 * q + 1])) {
+            t = add_triangle(next, i, q, hull_tri[i], INVALID_INDEX,
+                             hull_tri[next]);
+            hull_tri[i] = legalize(t + 2);
+            hull_next[next] = next; // mark as removed
+            hull_size--;
+            next = q;
+        }
+
+        // walk backward from the other side, adding more triangles and flipping
+        if (e == start) {
+            while (q = hull_prev[e],
+                   orient(x, y, coords[2 * q], coords[2 * q + 1], coords[2 * e],
+                          coords[2 * e + 1])) {
+                t = add_triangle(q, i, e, INVALID_INDEX, hull_tri[e],
+                                 hull_tri[q]);
+                legalize(t + 2);
+                hull_tri[q] = t;
+                hull_next[e] = e; // mark as removed
+                hull_size--;
+                e = q;
+            }
+        }
+
+        // update the hull indices
+        hull_prev[i] = e;
+        hull_start = e;
+        hull_prev[next] = i;
+        hull_next[e] = i;
+        hull_next[i] = next;
+
+        m_hash[hash_key(x, y)] = i;
+        m_hash[hash_key(coords[2 * e], coords[2 * e + 1])] = e;
+    }
 }
 
 HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t &i, std::size_t &j) {
@@ -320,4 +425,159 @@ HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t &i, std::size_t &j) {
     }
 }
 
+HOST_DEVICE_INLINE std::size_t Delaunator::hash_key(const double x,
+                                                    const double y) const {
+    const double dx = x - m_center_x;
+    const double dy = y - m_center_y;
+    return fast_mod(
+        static_cast<std::size_t>(std::llround(std::floor(
+            pseudo_angle(dx, dy) * static_cast<double>(m_hash_size)))),
+        m_hash_size);
+}
+
+HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
+                                         const std::size_t b) {
+    std::size_t s = halfedges_size;
+    if (a == s) {
+        halfedges[halfedges_size++] = b;
+    } else if (a < s) {
+        halfedges[a] = b;
+    } else {
+        // TODO: throw CUDA error
+        // throw std::runtime_error("Cannot link edge");
+    }
+
+    if (b != INVALID_INDEX) {
+        std::size_t s2 = halfedges_size;
+        if (b == s2) {
+            halfedges[halfedges_size++] = a;
+        } else if (b < s2) {
+            halfedges[b] = a;
+        } else {
+            // TODO: throw CUDA error
+            // throw std::runtime_error("Cannot link edge");
+        }
+    }
+}
+
+HOST_DEVICE_INLINE std::size_t
+Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
+                         std::size_t a, std::size_t b, std::size_t c) {
+    std::size_t t = triangles_size;
+    triangles[triangles_size++] = i0;
+    triangles[triangles_size++] = i1;
+    triangles[triangles_size++] = i2;
+    link(t, a);
+    link(t + 1, b);
+    link(t + 2, c);
+    return t;
+}
+
+HOST_DEVICE_INLINE std::size_t Delaunator::legalize(std::size_t a) {
+    std::size_t i = 0;
+    std::size_t ar = 0;
+    m_edge_stack_size = 0;
+
+    // recursion eliminated with a fixed-size stack
+    while (true) {
+        const size_t b = halfedges[a];
+
+        /* if the pair of triangles doesn't satisfy the Delaunay condition
+         * (p1 is inside the circumcircle of [p0, pl, pr]), flip them,
+         * then do the same check/flip recursively for the new pair of triangles
+         *
+         *           pl                    pl
+         *          /||\                  /  \
+         *       al/ || \bl            al/    \a
+         *        /  ||  \              /      \
+         *       /  a||b  \    flip    /___ar___\
+         *     p0\   ||   /p1   =>   p0\---bl---/p1
+         *        \  ||  /              \      /
+         *       ar\ || /br             b\    /br
+         *          \||/                  \  /
+         *           pr                    pr
+         */
+        const size_t a0 = 3 * (a / 3);
+        ar = a0 + (a + 2) % 3;
+
+        if (b == INVALID_INDEX) {
+            if (i > 0) {
+                i--;
+                a = m_edge_stack[i];
+                continue;
+            } else {
+                // i = INVALID_INDEX;
+                break;
+            }
+        }
+
+        const size_t b0 = 3 * (b / 3);
+        const size_t al = a0 + (a + 1) % 3;
+        const size_t bl = b0 + (b + 2) % 3;
+
+        const std::size_t p0 = triangles[ar];
+        const std::size_t pr = triangles[a];
+        const std::size_t pl = triangles[al];
+        const std::size_t p1 = triangles[bl];
+
+        const bool illegal =
+            in_circle(coords[2 * p0], coords[2 * p0 + 1], coords[2 * pr],
+                      coords[2 * pr + 1], coords[2 * pl], coords[2 * pl + 1],
+                      coords[2 * p1], coords[2 * p1 + 1]);
+        if (illegal) {
+            triangles[a] = p1;
+            triangles[b] = p0;
+
+            auto hbl = halfedges[bl];
+
+            // edge swapped on the other side of the hull (rare); fix the
+            // halfedge reference
+            if (hbl == INVALID_INDEX) {
+                std::size_t e = hull_start;
+                do {
+                    if (hull_tri[e] == bl) {
+                        hull_tri[e] = a;
+                        break;
+                    }
+                    e = hull_next[e];
+                } while (e != hull_start);
+            }
+            link(a, hbl);
+            link(b, halfedges[ar]);
+            link(ar, bl);
+            std::size_t br = b0 + (b + 1) % 3;
+
+            if (i < m_edge_stack_size) {
+                m_edge_stack[i] = br;
+            } else {
+                m_edge_stack[m_edge_stack_size++] = br;
+            }
+            i++;
+
+        } else {
+            if (i > 0) {
+                i--;
+                a = m_edge_stack[i];
+                continue;
+            } else {
+                break;
+            }
+        }
+    }
+    return ar;
+}
+
+HOST_DEVICE_INLINE double Delaunator::get_hull_area() {
+    double hull_area[POINTS_NUMBER * 2];
+    std::size_t hull_area_size = 0;
+
+    std::size_t e = hull_start;
+    do {
+        hull_area[hull_area_size++] =
+            ((coords[2 * e] - coords[2 * hull_prev[e]]) *
+             (coords[2 * e + 1] + coords[2 * hull_prev[e] + 1]));
+        e = hull_next[e];
+    } while (e != hull_start);
+    return sum(hull_area, hull_area_size);
+}
 // Delaunator
