@@ -141,9 +141,9 @@ struct Delaunator {
     double coords[POINTS_NUMBER * 2];
     std::size_t triangles[MAX_TRIANGLES * 3];
     std::size_t halfedges[MAX_TRIANGLES * 3];
-    std::size_t *hull_prev;
-    std::size_t *hull_next;
-    std::size_t *hull_tri;
+    std::size_t hull_prev[POINTS_NUMBER];
+    std::size_t hull_next[POINTS_NUMBER];
+    std::size_t hull_tri[POINTS_NUMBER];
     std::size_t hull_start;
 
     HOST_DEVICE_INLINE Delaunator(double *in_coords, const std::size_t length);
@@ -151,7 +151,7 @@ struct Delaunator {
     double get_hull_area();
 
   private:
-    std::size_t *m_hash;
+    std::size_t m_hash[POINTS_NUMBER];
     double m_center_x;
     double m_center_y;
     std::size_t m_hash_size;
@@ -163,12 +163,19 @@ struct Delaunator {
                                                 std::size_t i2, std::size_t a,
                                                 std::size_t b, std::size_t c);
     HOST_DEVICE_INLINE void link(std::size_t a, std::size_t b);
+
+    HOST_DEVICE_INLINE bool compare(std::size_t &i, std::size_t &j);
 };
 
 HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
                                           const std::size_t length) {
+    // intialize
 
+    for (size_t i = 0; i < length; i++)
+        coords[i] = in_coords[i];
     std::size_t n = length / 2;
+
+    // initialize
 
     double max_x = std::numeric_limits<double>::min();
     double max_y = std::numeric_limits<double>::min();
@@ -261,6 +268,56 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     }
 
     circumcenter(i0x, i0y, i1x, i1y, i2x, i2y, m_center_x, m_center_y);
+
+    // bubble sort
+    // points number is little
+    for (std::size_t i = 0; i < n; i++) {
+        for (std::size_t j = 0; j < n - i - 1; j++) {
+            if (compare(i, j))
+                swap_size_t(ids[i], ids[j]);
+        }
+    }
+
+    m_hash_size =
+        static_cast<std::size_t>(std::llround(std::ceil(std::sqrt(n))));
+
+    for (size_t i = 0; i < m_hash_size; i++) {
+        m_hash[i] = i;
+    }
+
+    hull_start = i0;
+
+    size_t hull_size = 3;
+
+    hull_next[i0] = hull_prev[i2] = i1;
+    hull_next[i1] = hull_prev[i0] = i2;
+    hull_next[i2] = hull_prev[i1] = i0;
+
+    hull_tri[i0] = 0;
+    hull_tri[i1] = 1;
+    hull_tri[i2] = 2;
+
+    m_hash[hash_key(i0x, i0y)] = i0;
+    m_hash[hash_key(i1x, i1y)] = i1;
+    m_hash[hash_key(i2x, i2y)] = i2;
+}
+
+HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t &i, std::size_t &j) {
+    const double d1 = dist(coords[2 * i], coords[2 * i + 1], this->m_center_x,
+                           this->m_center_y);
+    const double d2 = dist(coords[2 * j], coords[2 * j + 1], this->m_center_x,
+                           this->m_center_y);
+    const double diff1 = d1 - d2;
+    const double diff2 = coords[2 * i] - coords[2 * j];
+    const double diff3 = coords[2 * i + 1] - coords[2 * j + 1];
+
+    if (diff1 > 0.0 || diff1 < 0.0) {
+        return diff1 < 0;
+    } else if (diff2 > 0.0 || diff2 < 0.0) {
+        return diff2 < 0;
+    } else {
+        return diff3 < 0;
+    }
 }
 
 // Delaunator
