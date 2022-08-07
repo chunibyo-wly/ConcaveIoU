@@ -1,6 +1,7 @@
 #ifndef TEST_CONCAVE_CU_
 #define TEST_CONCAVE_CU_
 
+#include <stdio.h>
 #include <filesystem>
 #include <iostream>
 #include <random>
@@ -279,7 +280,7 @@ const std::vector<std::vector<double>> coordsVector = {
 
 };
 
-const int MAX_I = 100, MAX_J = 4000;
+const int MAX_I = 10, MAX_J = 10;
 __device__ double cudaArray[MAX_I * MAX_J] = {0};
 __device__ std::size_t cudaNumber[MAX_I] = {0};
 
@@ -304,7 +305,7 @@ TEST(concave_iou, delaunator) {
 CUDA_TEST(concave_iou, Delaunator) {
     std::size_t index = 0;
 
-    while (cudaNumber[index] != 0) {
+    while (cudaNumber[index] > 0) {
         Delaunator d(cudaArray + index * MAX_J, cudaNumber[index]);
         for (std::size_t i = 0; i < d.halfedges_size; ++i) {
             const auto i2 = d.halfedges[i];
@@ -313,6 +314,23 @@ CUDA_TEST(concave_iou, Delaunator) {
                       true);
         }
         index++;
+
+        // validate triangulation
+        double hull_area = d.get_hull_area();
+        double *triangles_areas = new double[d.triangles_size];
+        std::size_t triangles_areas_size = 0;
+        for (std::size_t i = 0; i < d.triangles_size; i += 3) {
+            const double ax = cudaArray[2 * d.triangles[i]];
+            const double ay = cudaArray[2 * d.triangles[i] + 1];
+            const double bx = cudaArray[2 * d.triangles[i + 1]];
+            const double by = cudaArray[2 * d.triangles[i + 1] + 1];
+            const double cx = cudaArray[2 * d.triangles[i + 2]];
+            const double cy = cudaArray[2 * d.triangles[i + 2] + 1];
+            triangles_areas[triangles_areas_size++] =
+                std::fabs((by - ay) * (cx - bx) - (bx - ax) * (cy - by));
+        }
+        double triangles_area = sum(triangles_areas, triangles_areas_size);
+        EXPECT_FLOAT_EQ(triangles_area, hull_area);
     }
 }
 

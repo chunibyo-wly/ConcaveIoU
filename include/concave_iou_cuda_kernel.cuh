@@ -134,7 +134,7 @@ struct DelaunatorPoint {
     bool removed;
 };
 
-#define POINTS_NUMBER 100
+#define POINTS_NUMBER 200
 const int MAX_TRIANGLES = POINTS_NUMBER < 3 ? 1 : 2 * POINTS_NUMBER - 5;
 struct Delaunator {
   public:
