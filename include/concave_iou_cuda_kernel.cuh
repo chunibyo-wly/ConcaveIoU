@@ -134,7 +134,7 @@ struct DelaunatorPoint {
     bool removed;
 };
 
-#define POINTS_NUMBER 200
+#define POINTS_NUMBER 500
 const int MAX_TRIANGLES = POINTS_NUMBER < 3 ? 1 : 2 * POINTS_NUMBER - 5;
 struct Delaunator {
   public:
@@ -292,7 +292,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         static_cast<std::size_t>(std::llround(std::ceil(std::sqrt(n))));
 
     for (size_t i = 0; i < m_hash_size; i++) {
-        m_hash[i] = i;
+        m_hash[i] = INVALID_INDEX;
     }
 
     hull_start = i0;
@@ -343,16 +343,17 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
         start = hull_prev[start];
         size_t e = start;
-        size_t q;
+        size_t q = hull_next[e];
 
-        while (q = hull_next[e], !orient(x, y, coords[2 * e], coords[2 * e + 1],
-                                         coords[2 * q], coords[2 * q + 1])) {
+        while (!orient(x, y, coords[2 * e], coords[2 * e + 1], coords[2 * q],
+                       coords[2 * q + 1])) {
             // TODO: does it works in a same way as in JS
             e = q;
             if (e == start) {
                 e = INVALID_INDEX;
                 break;
             }
+            q = hull_next[e];
         }
 
         if (e == INVALID_INDEX)
