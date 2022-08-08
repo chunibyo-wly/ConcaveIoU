@@ -4,6 +4,14 @@
 // Delaunator
 // https://github.com/delfrrr/delaunator-cpp
 
+HOST_DEVICE_INLINE std::size_t next_halfedge(std::size_t e) {
+    return (e % 3 == 2) ? e - 2 : e + 1;
+}
+
+HOST_DEVICE_INLINE std::size_t prev_halfedge(std::size_t e) {
+    return (e % 3 == 0) ? e + 2 : e - 1;
+}
+
 HOST_DEVICE_INLINE void swap_size_t(std::size_t &x, std::size_t &y) {
     std::size_t tmp = x;
     x = y;
@@ -153,6 +161,12 @@ struct Delaunator {
     HOST_DEVICE_INLINE Delaunator(double *in_coords, const std::size_t length);
 
     HOST_DEVICE_INLINE double get_hull_area();
+    HOST_DEVICE_INLINE void get_hull_coords(double *hull_coords,
+                                            std::size_t &hull_coords_size);
+    HOST_DEVICE_INLINE void get_hull_points(std::size_t *hull_pts,
+                                            std::size_t &hull_pts_size);
+    HOST_DEVICE_INLINE double edge_length(std::size_t e);
+    HOST_DEVICE_INLINE std::size_t get_interior_point(std::size_t e);
 
   private:
     std::size_t m_hash[POINTS_NUMBER];
@@ -343,17 +357,16 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
         start = hull_prev[start];
         size_t e = start;
-        size_t q = hull_next[e];
+        size_t q;
 
-        while (!orient(x, y, coords[2 * e], coords[2 * e + 1], coords[2 * q],
-                       coords[2 * q + 1])) {
+        while (q = hull_next[e], !orient(x, y, coords[2 * e], coords[2 * e + 1],
+                                         coords[2 * q], coords[2 * q + 1])) {
             // TODO: does it works in a same way as in JS
             e = q;
             if (e == start) {
                 e = INVALID_INDEX;
                 break;
             }
-            q = hull_next[e];
         }
 
         if (e == INVALID_INDEX)
@@ -581,4 +594,67 @@ HOST_DEVICE_INLINE double Delaunator::get_hull_area() {
     } while (e != hull_start);
     return sum(hull_area, hull_area_size);
 }
+
+HOST_DEVICE_INLINE void
+Delaunator::get_hull_points(std::size_t *hull_pts, std::size_t &hull_pts_size) {
+    hull_pts_size = 0;
+    std::size_t point = hull_start;
+    do {
+        hull_pts[hull_pts_size++] = point;
+        point = hull_next[point];
+    } while (point != hull_start);
+
+    // Wrap back around
+    hull_pts[hull_pts_size++] = hull_start;
+}
+
+HOST_DEVICE_INLINE void
+Delaunator::get_hull_coords(double *hull_coords,
+                            std::size_t &hull_coords_size) {
+    std::size_t hull_pts[POINTS_NUMBER];
+    std::size_t hull_pts_size = 0;
+    get_hull_points(hull_pts, hull_pts_size);
+
+    hull_coords_size = 0;
+    for (std::size_t point : hull_pts) {
+        double x = coords[2 * point];
+        double y = coords[2 * point + 1];
+        hull_coords[hull_coords_size++] = x;
+        hull_coords[hull_coords_size++] = y;
+    }
+}
+
+HOST_DEVICE_INLINE double Delaunator::edge_length(std::size_t e_a) {
+    size_t e_b = next_halfedge(e_a);
+
+    double x_a = coords[2 * triangles[e_a]];
+    double y_a = coords[2 * triangles[e_a] + 1];
+
+    double x_b = coords[2 * triangles[e_b]];
+    double y_b = coords[2 * triangles[e_b] + 1];
+
+    return std::sqrt(std::pow(x_a - x_b, 2) + std::pow(y_a - y_b, 2));
+}
+
+HOST_DEVICE_INLINE size_t Delaunator::get_interior_point(std::size_t e) {
+    return triangles[next_halfedge(next_halfedge(e))];
+}
+
 // Delaunator
+
+void concavehull(double *coords, std::size_t coords_size,
+                 double chi_factor = 0.1) {
+    if (chi_factor < 0 || chi_factor > 1) {
+        // TODO: cuda throw error
+        // throw std::invalid_argument(
+        //     "Chi factor must be between 0 and 1 inclusive");
+    }
+
+    Delaunator d(coords, coords_size);
+
+    // Determine initial points on outside hull
+    std::size_t bpoints[POINTS_NUMBER];
+    std::size_t bpoints_size = 0;
+
+    d.get_hull_points(bpoints, bpoints_size);
+}

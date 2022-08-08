@@ -11,6 +11,10 @@
 
 namespace delaunator {
 
+size_t next_halfedge(size_t e) { return (e % 3 == 2) ? e - 2 : e + 1; }
+
+size_t prev_halfedge(size_t e) { return (e % 3 == 0) ? e + 2 : e - 1; }
+
 //@see
 // https://stackoverflow.com/questions/33333363/built-in-mod-vs-custom-mod-function-improve-the-performance-of-modulus-op/33333636#33333636
 inline size_t fast_mod(const size_t i, const size_t c) {
@@ -152,7 +156,7 @@ struct DelaunatorPoint {
 class Delaunator {
 
   public:
-    std::vector<double> const &coords;
+    const std::vector<double> &coords;
     std::vector<std::size_t> triangles;
     std::vector<std::size_t> halfedges;
     std::vector<std::size_t> hull_prev;
@@ -160,9 +164,14 @@ class Delaunator {
     std::vector<std::size_t> hull_tri;
     std::size_t hull_start;
 
-    Delaunator(std::vector<double> const &in_coords);
+    Delaunator(const std::vector<double> &in_coords);
 
     double get_hull_area();
+    std::vector<double> get_hull_coords();
+    std::vector<size_t> get_hull_points();
+
+    double edge_length(size_t e);
+    size_t get_interior_point(size_t e);
 
   private:
     std::vector<std::size_t> m_hash;
@@ -178,7 +187,7 @@ class Delaunator {
     void link(std::size_t a, std::size_t b);
 };
 
-Delaunator::Delaunator(std::vector<double> const &in_coords)
+Delaunator::Delaunator(const std::vector<double> &in_coords)
     : coords(in_coords), triangles(), halfedges(), hull_prev(), hull_next(),
       hull_tri(), hull_start(), m_hash(), m_center_x(), m_center_y(),
       m_hash_size(), m_edge_stack() {
@@ -551,6 +560,53 @@ void Delaunator::link(const std::size_t a, const std::size_t b) {
             throw std::runtime_error("Cannot link edge");
         }
     }
+}
+
+std::vector<size_t> Delaunator::get_hull_points() {
+    std::vector<size_t> hull_pts;
+
+    size_t point = hull_start;
+    do {
+        hull_pts.push_back(point);
+        point = hull_next[point];
+    } while (point != hull_start);
+
+    // Wrap back around
+    hull_pts.push_back(hull_start);
+
+    return hull_pts;
+}
+
+std::vector<double> Delaunator::get_hull_coords() {
+    const std::vector<size_t> hull_pts = get_hull_points();
+
+    std::vector<double> hull_coords;
+    hull_coords.reserve(2 * hull_pts.size());
+
+    for (size_t point : hull_pts) {
+        double x = coords[2 * point];
+        double y = coords[2 * point + 1];
+        hull_coords.push_back(x);
+        hull_coords.push_back(y);
+    }
+
+    return hull_coords;
+}
+
+double Delaunator::edge_length(size_t e_a) {
+    size_t e_b = next_halfedge(e_a);
+
+    double x_a = coords[2 * triangles[e_a]];
+    double y_a = coords[2 * triangles[e_a] + 1];
+
+    double x_b = coords[2 * triangles[e_b]];
+    double y_b = coords[2 * triangles[e_b] + 1];
+
+    return sqrt(pow(x_a - x_b, 2) + pow(y_a - y_b, 2));
+}
+
+size_t Delaunator::get_interior_point(size_t e) {
+    return triangles[next_halfedge(next_halfedge(e))];
 }
 
 } // namespace delaunator
