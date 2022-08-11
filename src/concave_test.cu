@@ -53,6 +53,30 @@ CUDA_TEST(concave_iou, While) {
     ASSERT_EQ(y, 21);
 }
 
+HOST_DEVICE_INLINE bool compare(std::size_t i, std::size_t j) { return i < j; }
+
+CUDA_TEST(concave_iou, bubble_sort) {
+    std::size_t ids[10];
+    int n = 10;
+    for (int i = 0; i < n; ++i)
+        ids[i] = n - i;
+
+    for (std::size_t i = 0; i < n; i++) {
+        for (std::size_t j = 0; j < n - i - 1; j++) {
+            if (compare(ids[j + 1], ids[j]))
+                swap_size_t(ids[j], ids[j + 1]);
+        }
+    }
+    for (int i = 0; i < n - 1; ++i) {
+        ASSERT_EQ(ids[i] < ids[i + 1], true);
+    }
+}
+
+CUDA_TEST(concave_iou, orient) {
+    ASSERT_EQ(orient(0., 0., 0., 1., 1., 0.), false);
+    ASSERT_EQ(orient(0., 0., 1., 0., 0., 1.), true);
+}
+
 inline void validate(const std::vector<double> &coords) {
     delaunator::Delaunator d(coords);
 

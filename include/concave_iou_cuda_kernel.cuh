@@ -77,6 +77,10 @@ HOST_DEVICE_INLINE double circumradius(const double ax, const double ay,
 HOST_DEVICE_INLINE bool orient(const double px, const double py,
                                const double qx, const double qy,
                                const double rx, const double ry) {
+    // 逆时针方向为真
+    // (y2 - y1)*(x3 - x2) + (x2 - x1)*(y3 - y2)
+    // https://www.geeksforgeeks.org/orientation-3-ordered-points/
+    // To find orientation of ordered triplet (p1, p2, p3).
     return (qy - py) * (rx - qx) - (qx - px) * (ry - qy) < 0.0;
 }
 
@@ -128,6 +132,10 @@ HOST_DEVICE_INLINE bool check_pts_equal(double x1, double y1, double x2,
 // monotonically increases with real angle, but doesn't need expensive
 // trigonometry
 HOST_DEVICE_INLINE double pseudo_angle(const double dx, const double dy) {
+    // https://computergraphics.stackexchange.com/a/10523
+    // TODO:
+    // 好像是使用伪角可以做到和反三角函数一样的单调性，然后将三角函数对应的圆投影到
+    // 0-1 区间。
     const double p = dx / (std::abs(dx) + std::abs(dy));
     return (dy > 0.0 ? 3.0 - p : 1.0 + p) / 4.0; // [0..1)
 }
@@ -185,7 +193,7 @@ struct Delaunator {
                                                 std::size_t b, std::size_t c);
     HOST_DEVICE_INLINE void link(std::size_t a, std::size_t b);
 
-    HOST_DEVICE_INLINE bool compare(std::size_t &i, std::size_t &j);
+    HOST_DEVICE_INLINE bool compare(std::size_t i, std::size_t j);
 };
 
 HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
@@ -208,6 +216,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
     std::size_t ids[POINTS_NUMBER];
 
+    // 坐标轴方向的矩形包围盒
     for (std::size_t i = 0; i < n; i++) {
         const double x = coords[2 * i];
         const double y = coords[2 * i + 1];
@@ -224,14 +233,18 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         ids[i] = i;
     }
 
+    // 矩形包围盒中心
     const double cx = (min_x + max_x) / 2;
     const double cy = (min_y + max_y) / 2;
     double min_dist = std::numeric_limits<double>::max();
 
+    // 到矩形包围盒中心最小的点
     std::size_t i0 = INVALID_INDEX;
+    // 到 i0 最近的点
     std::size_t i1 = INVALID_INDEX;
     std::size_t i2 = INVALID_INDEX;
 
+    // 计算每个点到矩形中心的距离，选出最小点 i0
     // pick a seed point close to the centroid
     for (std::size_t i = 0; i < n; i++) {
         const double d = dist(cx, cy, coords[2 * i], coords[2 * i + 1]);
@@ -246,6 +259,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
     min_dist = std::numeric_limits<double>::max();
 
+    // 计算每个点到 i0 的距离，选出最小点 i1
     // find the point closest to the seed
     for (std::size_t i = 0; i < n; i++) {
         if (i == i0)
@@ -262,6 +276,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
     double min_radius = std::numeric_limits<double>::max();
 
+    // 遍历所有点，找出共圆后半径最小的点 i2
     // find the third point which forms the smallest circumcircle with the first
     // two
     for (std::size_t i = 0; i < n; i++) {
@@ -285,19 +300,23 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     double i2x = coords[2 * i2];
     double i2y = coords[2 * i2 + 1];
 
+    // 保证 i0 -> i1 -> i2 就是顺时针方向
     if (orient(i0x, i0y, i1x, i1y, i2x, i2y)) {
         swap_size_t(i1, i2);
         swap_double(i1x, i2x);
         swap_double(i1y, i2y);
     }
 
+    // i0, i1, i2 三点共圆圆心
     circumcenter(i0x, i0y, i1x, i1y, i2x, i2y, m_center_x, m_center_y);
 
     // bubble sort
     // points number is little
+    // sort the points by distance from the seed triangle circumcenter
+    // 按照点到初始圆心距离排序
     for (std::size_t i = 0; i < n; i++) {
         for (std::size_t j = 0; j < n - i - 1; j++) {
-            if (compare(i, j))
+            if (this->compare(j + 1, j))
                 swap_size_t(ids[i], ids[j]);
         }
     }
@@ -330,17 +349,22 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     double yp = std::numeric_limits<double>::quiet_NaN();
 
     for (std::size_t k = 0; k < n; k++) {
+        // 遍历所有点，此时 ids 是从小到大的顺序
+        // i 表示当前点
         const std::size_t i = ids[k];
         const double x = coords[2 * i];
         const double y = coords[2 * i + 1];
 
         // skip near-duplicate points
+        // 保证当前点不和上一个点重合
         if (k > 0 && check_pts_equal(x, y, xp, yp))
             continue;
+        // 备份当前点变成上一个点
         xp = x;
         yp = y;
 
         // skip seed triangle points
+        // 跳过构成初始圆的三个点
         if (check_pts_equal(x, y, i0x, i0y) ||
             check_pts_equal(x, y, i1x, i1y) || check_pts_equal(x, y, i2x, i2y))
             continue;
@@ -349,6 +373,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         std::size_t start = 0;
 
         size_t key = hash_key(x, y);
+        // 逆时针方向寻找距离角度最近的已加入集合中的点
         for (size_t j = 0; j < m_hash_size; j++) {
             start = m_hash[fast_mod(key + j, m_hash_size)];
             if (start != INVALID_INDEX && start != hull_next[start])
@@ -359,6 +384,9 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         size_t e = start;
         size_t q;
 
+        // q 永远是 e 的下一个点
+        // 如果是顺时针就一直循环
+        // 直到找到一组三点对 i -> e -> q 构成逆时针顺序
         while (q = hull_next[e], !orient(x, y, coords[2 * e], coords[2 * e + 1],
                                          coords[2 * q], coords[2 * q + 1])) {
             // TODO: does it works in a same way as in JS
@@ -421,7 +449,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     }
 }
 
-HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t &i, std::size_t &j) {
+HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t i, std::size_t j) {
     const double d1 = dist(coords[2 * i], coords[2 * i + 1], this->m_center_x,
                            this->m_center_y);
     const double d2 = dist(coords[2 * j], coords[2 * j + 1], this->m_center_x,
@@ -451,6 +479,10 @@ HOST_DEVICE_INLINE std::size_t Delaunator::hash_key(const double x,
 
 HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
                                          const std::size_t b) {
+    // TODO:
+    // 建立无向图
+    // halfedges[i] = j: 第 i 个点指向第 j 个点
+    // 无向图，需要存两次边
     std::size_t s = halfedges_size;
     if (a == s) {
         halfedges[halfedges_size++] = b;
@@ -477,6 +509,7 @@ HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
 HOST_DEVICE_INLINE std::size_t
 Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
                          std::size_t a, std::size_t b, std::size_t c) {
+    // 输入的三个点 i0, i1, i2 保证为顺时针方向
     std::size_t t = triangles_size;
     triangles[triangles_size++] = i0;
     triangles[triangles_size++] = i1;
