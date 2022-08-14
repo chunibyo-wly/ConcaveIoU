@@ -2,7 +2,8 @@
 #define HOST_DEVICE_INLINE HOST_DEVICE __forceinline__
 
 // Delaunator
-// https://github.com/delfrrr/delaunator-cpp
+// https://github.com/delfrrr/delaunator-
+// https://mapbox.github.io/delaunator/
 
 HOST_DEVICE_INLINE std::size_t next_halfedge(std::size_t e) {
     return (e % 3 == 2) ? e - 2 : e + 1;
@@ -77,7 +78,7 @@ HOST_DEVICE_INLINE double circumradius(const double ax, const double ay,
 HOST_DEVICE_INLINE bool orient(const double px, const double py,
                                const double qx, const double qy,
                                const double rx, const double ry) {
-    // 逆时针方向为真
+    // ! 逆时针方向为真
     // (y2 - y1)*(x3 - x2) + (x2 - x1)*(y3 - y2)
     // https://www.geeksforgeeks.org/orientation-3-ordered-points/
     // To find orientation of ordered triplet (p1, p2, p3).
@@ -106,6 +107,7 @@ HOST_DEVICE_INLINE bool in_circle(const double ax, const double ay,
                                   const double bx, const double by,
                                   const double cx, const double cy,
                                   const double px, const double py) {
+    // 判断 p 是否在 abc 组成的圆内
     const double dx = ax - px;
     const double dy = ay - py;
     const double ex = bx - px;
@@ -163,6 +165,7 @@ struct Delaunator {
 
     std::size_t hull_prev[POINTS_NUMBER * 2];
     std::size_t hull_next[POINTS_NUMBER * 2];
+    // coords 顺序的第 i 个点对应的 halfedge
     std::size_t hull_tri[POINTS_NUMBER * 2];
     std::size_t hull_start;
 
@@ -316,8 +319,8 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     // 按照点到初始圆心距离排序
     for (std::size_t i = 0; i < n; i++) {
         for (std::size_t j = 0; j < n - i - 1; j++) {
-            if (this->compare(j + 1, j))
-                swap_size_t(ids[i], ids[j]);
+            if (this->compare(ids[j + 1], ids[j]))
+                swap_size_t(ids[j + 1], ids[j]);
         }
     }
 
@@ -385,8 +388,27 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         size_t q;
 
         // q 永远是 e 的下一个点
-        // 如果是顺时针就一直循环
-        // 直到找到一组三点对 i -> e -> q 构成逆时针顺序
+        // ! 如果是顺时针就一直循环
+        // ! 直到找到一组三点对 i -> e -> q 构成逆时针方向
+        /*
+         * counter clock wise   q    clock wise
+         *     +--------------- ^ ---------------+
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *  i  v                |                v  r
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     |                |                |
+         *     +---------------> <---------------+
+         *                      e
+         */
         while (q = hull_next[e], !orient(x, y, coords[2 * e], coords[2 * e + 1],
                                          coords[2 * q], coords[2 * q + 1])) {
             // TODO: does it works in a same way as in JS
@@ -401,9 +423,13 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
             continue; // likely a near-duplicate point; skip it
 
         // add the first triangle from the point
+        // i -> e -> q 逆时针方向, e -> i -> q 顺时针方向
+        // e -> q 为两个三角形相邻边
+        // 所以新三角形 △ieq 以 q 为起点的 halfedge 对应的是 △eqr 的以 e 为起点的 halfedge
         std::size_t t = add_triangle(e, i, hull_next[e], INVALID_INDEX,
                                      INVALID_INDEX, hull_tri[e]);
 
+        // t+2 对应的是新三角形以 hull_next[e] 或者说 q 为起点的 halfedge
         hull_tri[i] = legalize(t + 2);
         hull_tri[e] = t;
         hull_size++;
@@ -479,10 +505,9 @@ HOST_DEVICE_INLINE std::size_t Delaunator::hash_key(const double x,
 
 HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
                                          const std::size_t b) {
-    // TODO:
     // 建立无向图
-    // halfedges[i] = j: 第 i 个点指向第 j 个点
-    // 无向图，需要存两次边
+    // halfedges[i] = j: 第 i 条边对应的第 j 条边
+    // 强假设: 相邻两个三角形边按顺时针排列，重叠的两条边一定方向相反
     std::size_t s = halfedges_size;
     if (a == s) {
         halfedges[halfedges_size++] = b;
@@ -510,6 +535,8 @@ HOST_DEVICE_INLINE std::size_t
 Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
                          std::size_t a, std::size_t b, std::size_t c) {
     // 输入的三个点 i0, i1, i2 保证为顺时针方向
+    // 前三个参数为新三角形的三个点，会在这个函数里面映射到 halfedge
+    // 后三个参数为已经记录过的 halfedge，与新的 halfedge 进行 link
     std::size_t t = triangles_size;
     triangles[triangles_size++] = i0;
     triangles[triangles_size++] = i1;
@@ -521,12 +548,14 @@ Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
 }
 
 HOST_DEVICE_INLINE std::size_t Delaunator::legalize(std::size_t a) {
+    // 第 a 条 halfedge
     std::size_t i = 0;
     std::size_t ar = 0;
     m_edge_stack_size = 0;
 
     // recursion eliminated with a fixed-size stack
     while (true) {
+        // a 的对应边 b
         const size_t b = halfedges[a];
 
         /* if the pair of triangles doesn't satisfy the Delaunay condition

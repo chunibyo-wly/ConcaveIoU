@@ -110,8 +110,8 @@ const int MAX_J = 500;
 
 CUDA_TEST(concave_iou, Delaunator1) {
     std::size_t number = 14;
-    double cudaArray[MAX_J] = {516, 661, 369, 793, 426, 539, 273,
-                               525, 204, 694, 747, 750, 454, 390};
+    double cudaArray[MAX_J] = {516, 661, 426, 539, 273, 525, 204,
+                               694, 747, 750, 369, 793, 454, 390};
 
     // TODO: code duplication
 
