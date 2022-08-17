@@ -397,4 +397,13 @@ CUDA_TEST(concave_iou, Delaunator3) {
     // TODO: code duplication
 }
 
+CUDA_TEST(concave_iou, concave1) {
+    std::size_t number = 14;
+    double cudaArray[MAX_J] = {516, 661, 426, 539, 273, 525, 204,
+                               694, 747, 750, 369, 793, 454, 390};
+    double outArray[MAX_J] = {0};
+    std::size_t outNumber = 0;
+    concavehull(cudaArray, number, outArray, outNumber);
+}
+
 #endif

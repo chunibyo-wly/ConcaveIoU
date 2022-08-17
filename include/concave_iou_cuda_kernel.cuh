@@ -425,7 +425,8 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         // add the first triangle from the point
         // i -> e -> q 逆时针方向, e -> i -> q 顺时针方向
         // e -> q 为两个三角形相邻边
-        // 所以新三角形 △ieq 以 q 为起点的 halfedge 对应的是 △eqr 的以 e 为起点的 halfedge
+        // 所以新三角形 △ieq 以 q 为起点的 halfedge 对应的是 △eqr 的以 e
+        // 为起点的 halfedge
         std::size_t t = add_triangle(e, i, hull_next[e], INVALID_INDEX,
                                      INVALID_INDEX, hull_tri[e]);
 
@@ -678,7 +679,7 @@ Delaunator::get_hull_coords(double *hull_coords,
     get_hull_points(hull_pts, hull_pts_size);
 
     hull_coords_size = 0;
-    for (std::size_t point : hull_pts) {
+    for (std::size_t point = 0; point < hull_pts_size; ++point) {
         double x = coords[2 * point];
         double y = coords[2 * point + 1];
         hull_coords[hull_coords_size++] = x;
@@ -704,8 +705,34 @@ HOST_DEVICE_INLINE size_t Delaunator::get_interior_point(std::size_t e) {
 
 // Delaunator
 
-void concavehull(double *coords, std::size_t coords_size,
-                 double chi_factor = 0.1) {
+// Concave hull
+
+HOST_DEVICE_INLINE void sort_bheap(std::size_t *bheap, std::size_t bheap_size,
+                                   double *edges_length) {
+    for (std::size_t i = 0; i < bheap_size; ++i)
+        bheap[i] = i;
+
+    for (std::size_t i = 0; i < bheap_size; i++) {
+        for (std::size_t j = 0; j < bheap_size - i - 1; j++) {
+            if (edges_length[bheap[j + 1]] < edges_length[bheap[j]])
+                swap_size_t(bheap[j + 1], bheap[j]);
+        }
+    }
+}
+
+HOST_DEVICE_INLINE bool exist(std::size_t *bpoints, std::size_t bpoints_size,
+                              std::size_t c) {
+    for (std::size_t i = 0; i < bpoints_size; ++i) {
+        if (c == bpoints[i])
+            return true;
+    }
+    return false;
+}
+
+HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
+                                    double *concaveCoords,
+                                    std::size_t &concaveCoords_size,
+                                    std::size_t chi_factor = 0.1) {
     if (chi_factor < 0 || chi_factor > 1) {
         // TODO: cuda throw error
         // throw std::invalid_argument(
@@ -715,8 +742,88 @@ void concavehull(double *coords, std::size_t coords_size,
     Delaunator d(coords, coords_size);
 
     // Determine initial points on outside hull
+    // 历史点集合
     std::size_t bpoints[POINTS_NUMBER];
     std::size_t bpoints_size = 0;
-
     d.get_hull_points(bpoints, bpoints_size);
+
+    // 用来排序的索引
+    std::size_t bheap[POINTS_NUMBER];
+    std::size_t bheap_size = bpoints_size;
+    double max_len = std::numeric_limits<double>::min();
+    double min_len = std::numeric_limits<double>::max();
+
+    // 边以及对应的长度
+    std::size_t edges[POINTS_NUMBER];
+    double edges_length[POINTS_NUMBER];
+
+    // 初始化
+    for (std::size_t i = 0; i < bpoints_size; ++i) {
+        // bheap[i] = i;
+        edges[i] = d.hull_tri[bpoints[i]];
+        edges_length[i] = d.edge_length(edges[i]);
+
+        min_len = std::min(edges_length[i], min_len);
+        max_len = std::max(edges_length[i], max_len);
+    }
+    sort_bheap(bheap, bheap_size, edges_length);
+
+    // Determine length parameter
+    double length_param = chi_factor * max_len + (1 - chi_factor) * min_len;
+
+    // Iteratively add points to boundary by iterating over the triangles on the
+    // hull
+    while (bheap_size > 0) {
+        // Get edge with the largest length
+        std::size_t tmp = bheap[bheap_size - 1];
+        bheap_size--;
+        std::size_t e = edges[tmp];
+        double len = edges_length[tmp];
+
+        // Length of edge too small for our chi factor
+        if (len <= length_param) {
+            break;
+        }
+
+        // Find interior point given edge e (a -> b)
+        //       e
+        //  b <----- a
+        //     \   /
+        //  e_b \ / e_a
+        //       c
+        size_t c = d.get_interior_point(e);
+
+        // Point already belongs to boundary
+        if (exist(bpoints, bpoints_size, c))
+            continue;
+
+        // Get two edges connected to interior point
+        //  c -> b
+        size_t e_b = d.halfedges[next_halfedge(e)];
+        //  a -> c
+        size_t e_a = d.halfedges[next_halfedge(next_halfedge(e))];
+
+        // Add edges to heap
+        double len_a = d.edge_length(e_a);
+        double len_b = d.edge_length(e_b);
+
+        edges[bheap_size] = e_a, edges[bheap_size + 1] = e_b;
+        edges_length[bheap_size] = len_a, edges_length[bheap_size + 1] = len_b;
+        bheap_size += 2;
+        sort_bheap(bheap, bheap_size, edges_length);
+
+        // Update outer hull and connect new edges
+        size_t a = d.triangles[e];
+        size_t b = d.triangles[next_halfedge(e)];
+
+        d.hull_next[c] = b;
+        d.hull_prev[c] = a;
+        d.hull_next[a] = d.hull_prev[b] = c;
+
+        bpoints[bpoints_size++] = c;
+    }
+
+    d.get_hull_coords(concaveCoords, concaveCoords_size);
+    std::size_t aaa = 1;
 }
+// Concave hull
