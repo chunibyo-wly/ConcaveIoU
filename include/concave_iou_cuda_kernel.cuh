@@ -1,3 +1,6 @@
+#include "convex_iou_cuda_kernel.cuh"
+#include "pytorch_cuda_helper.hpp"
+
 #define HOST_DEVICE __host__ __device__
 #define HOST_DEVICE_INLINE HOST_DEVICE __forceinline__
 
@@ -683,7 +686,8 @@ Delaunator::get_hull_coords(double *hull_coords,
     get_hull_points(hull_pts, hull_pts_size);
 
     hull_coords_size = 0;
-    for (std::size_t point = 0; point < hull_pts_size; ++point) {
+    for (std::size_t i = 0; i < hull_pts_size; ++i) {
+        auto point = hull_pts[i];
         double x = coords[2 * point];
         double y = coords[2 * point + 1];
         hull_coords[hull_coords_size++] = x;
@@ -828,6 +832,28 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
     }
 
     d.get_hull_coords(concaveCoords, concaveCoords_size);
-    std::size_t aaa = 1;
 }
 // Concave hull
+
+// Cuda kernel
+
+__global__ void concave_hull_cuda_kernel(double *points, std::size_t n_concave,
+                                         double *concave_points) {
+    CUDA_1D_KERNEL_LOOP(index, n_concave) {
+        std::size_t tmp = 0;
+        double *cur_points = points + index * 18;
+        concavehull(cur_points, 18, concave_points, tmp);
+    }
+}
+template <typename T>
+__global__ void concave_iou_cuda_kernel(const int ex_n_boxes,
+                                        const int gt_n_boxes, const T *ex_boxes,
+                                        const T *gt_boxes, T *iou) {
+    CUDA_1D_KERNEL_LOOP(index, ex_n_boxes) {
+        const T *cur_box = ex_boxes + index * 18;
+        for (int i = 0; i < gt_n_boxes; i++) {
+            iou[index * gt_n_boxes + i] = 3;
+        }
+    }
+}
+// Cuda kernel
