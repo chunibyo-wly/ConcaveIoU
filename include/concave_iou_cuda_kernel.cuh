@@ -740,7 +740,7 @@ HOST_DEVICE_INLINE bool exist(std::size_t *bpoints, std::size_t bpoints_size,
 HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
                                     double *concaveCoords,
                                     std::size_t &concaveCoords_size,
-                                    std::size_t chi_factor = 0.1) {
+                                    double chi_factor = 0.1) {
     if (chi_factor < 0 || chi_factor > 1) {
         // TODO: cuda throw error
         // throw std::invalid_argument(
@@ -837,12 +837,29 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
 
 // Cuda kernel
 
-__global__ void concave_hull_cuda_kernel(double *points, std::size_t n_concave,
-                                         double *concave_points) {
-    CUDA_1D_KERNEL_LOOP(index, n_concave) {
-        std::size_t tmp = 0;
-        double *cur_points = points + index * 18;
-        concavehull(cur_points, 18, concave_points, tmp);
+/**
+ * @brief
+ *
+ * @param n_group : K 组
+ * @param n_coords : 坐标点的数目
+ * @param points : 坐标点
+ * @param chi_factor : 生成凹包的参数
+ * @param output : 输出
+ * @return void
+ */
+__global__ void concave_hull_cuda_kernel(std::size_t n_group,
+                                         std::size_t n_coords, double *points,
+                                         double chi_factor, double *output) {
+    CUDA_1D_KERNEL_LOOP(index, n_group) {
+        // n_group 组点被拉长了，通过计算索引访问
+        double *current_points = points + index * n_coords;
+        // 每一行 n_coords+3 个元素
+        // 每行第一个为输出的凹包的点坐标数目
+        double *current_output = output + index * (n_coords + 3) + 1;
+        std::size_t concaveCoords_size = 0;
+        concavehull(current_points, n_coords, current_output,
+                    concaveCoords_size, chi_factor);
+        output[index * (n_coords + 3)] = concaveCoords_size;
     }
 }
 template <typename T>
