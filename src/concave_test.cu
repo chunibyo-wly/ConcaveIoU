@@ -18,31 +18,31 @@ CUDA_TEST(concave_iou, fast_mod) {
 
 CUDA_TEST(concave_iou, sum) {
     double a[5] = {0.123, 1.2, 3.166, 0.111, 2.1};
-    double result = sum(a, 5);
+    double result = sum<double>(a, 5);
     ASSERT_FLOAT_EQ(6.7, result);
 }
 
 CUDA_TEST(concave_iou, circumradius) {
-    double result = circumradius(0., 0., 0., 1., 1., 0.);
+    double result = circumradius<double>(0., 0., 0., 1., 1., 0.);
     ASSERT_FLOAT_EQ(result, 0.5);
 
-    ASSERT_FLOAT_EQ(circumradius(0., 0., -1., 0., 1., 0.),
+    ASSERT_FLOAT_EQ(circumradius<double>(0., 0., -1., 0., 1., 0.),
                     std::numeric_limits<double>::max());
 }
 
 CUDA_TEST(concave_iou, circumcenter) {
     double x, y;
-    circumcenter(0., 0., 0., 1., 1., 0., x, y);
+    circumcenter<double>(0., 0., 0., 1., 1., 0., x, y);
     ASSERT_FLOAT_EQ(x, 0.5);
     ASSERT_FLOAT_EQ(y, 0.5);
 }
 
 CUDA_TEST(concave_iou, check_pts_equal) {
-    ASSERT_EQ(
-        check_pts_equal(1. + std::numeric_limits<double>::epsilon(), 0., 1, 0.),
-        true);
-    ASSERT_EQ(check_pts_equal(1. + 2 * std::numeric_limits<double>::epsilon(),
-                              0., 1, 0.),
+    ASSERT_EQ(check_pts_equal<double>(
+                  1. + std::numeric_limits<double>::epsilon(), 0., 1, 0.),
+              true);
+    ASSERT_EQ(check_pts_equal<double>(
+                  1. + 2 * std::numeric_limits<double>::epsilon(), 0., 1, 0.),
               false);
 }
 
@@ -64,7 +64,7 @@ CUDA_TEST(concave_iou, bubble_sort) {
     for (std::size_t i = 0; i < n; i++) {
         for (std::size_t j = 0; j < n - i - 1; j++) {
             if (compare(ids[j + 1], ids[j]))
-                swap_size_t(ids[j], ids[j + 1]);
+                _swap<std::size_t>(ids[j], ids[j + 1]);
         }
     }
     for (int i = 0; i < n - 1; ++i) {
@@ -73,8 +73,8 @@ CUDA_TEST(concave_iou, bubble_sort) {
 }
 
 CUDA_TEST(concave_iou, orient) {
-    ASSERT_EQ(orient(0., 0., 0., 1., 1., 0.), false);
-    ASSERT_EQ(orient(0., 0., 1., 0., 0., 1.), true);
+    ASSERT_EQ(orient<double>(0., 0., 0., 1., 1., 0.), false);
+    ASSERT_EQ(orient<double>(0., 0., 1., 0., 0., 1.), true);
 }
 
 inline void validate(const std::vector<double> &coords) {
@@ -115,7 +115,7 @@ CUDA_TEST(concave_iou, Delaunator1) {
 
     // TODO: code duplication
 
-    Delaunator d(cudaArray, number);
+    Delaunator<double> d(cudaArray, number);
     for (std::size_t i = 0; i < d.halfedges_size; ++i) {
         const auto i2 = d.halfedges[i];
         ASSERT_EQ(
@@ -137,7 +137,7 @@ CUDA_TEST(concave_iou, Delaunator1) {
         triangles_areas[triangles_areas_size++] =
             std::fabs((by - ay) * (cx - bx) - (bx - ax) * (cy - by));
     }
-    double triangles_area = sum(triangles_areas, triangles_areas_size);
+    double triangles_area = sum<double>(triangles_areas, triangles_areas_size);
     ASSERT_FLOAT_EQ(triangles_area, hull_area);
     // TODO: code duplication
 }
@@ -181,7 +181,7 @@ CUDA_TEST(concave_iou, Delaunator2) {
 
     // TODO: code duplication
 
-    Delaunator d(cudaArray, number);
+    Delaunator<double> d(cudaArray, number);
     for (std::size_t i = 0; i < d.halfedges_size; ++i) {
         const auto i2 = d.halfedges[i];
         ASSERT_EQ(
@@ -203,7 +203,7 @@ CUDA_TEST(concave_iou, Delaunator2) {
         triangles_areas[triangles_areas_size++] =
             std::fabs((by - ay) * (cx - bx) - (bx - ax) * (cy - by));
     }
-    double triangles_area = sum(triangles_areas, triangles_areas_size);
+    double triangles_area = sum<double>(triangles_areas, triangles_areas_size);
     ASSERT_FLOAT_EQ(triangles_area, hull_area);
     // TODO: code duplication
 }
@@ -370,7 +370,7 @@ CUDA_TEST(concave_iou, Delaunator3) {
                                140.560237820700137};
 
     // TODO: code duplication
-    Delaunator d(cudaArray, number);
+    Delaunator<double> d(cudaArray, number);
     for (std::size_t i = 0; i < d.halfedges_size; ++i) {
         const auto i2 = d.halfedges[i];
         ASSERT_EQ(
@@ -392,7 +392,7 @@ CUDA_TEST(concave_iou, Delaunator3) {
         triangles_areas[triangles_areas_size++] =
             std::fabs((by - ay) * (cx - bx) - (bx - ax) * (cy - by));
     }
-    double triangles_area = sum(triangles_areas, triangles_areas_size);
+    double triangles_area = sum<double>(triangles_areas, triangles_areas_size);
     ASSERT_FLOAT_EQ(triangles_area, hull_area);
     // TODO: code duplication
 }
@@ -405,7 +405,7 @@ CUDA_TEST(concave_iou, concave2) {
                                97.265, 4.365,  90.014, 25.834, 33.545};
     double outArray[MAX_J] = {0};
     std::size_t outNumber = 0;
-    concavehull(cudaArray, number, outArray, outNumber);
+    concavehull<double>(cudaArray, number, outArray, outNumber);
 }
 
 CUDA_TEST(concave_iou, concave1) {
@@ -414,7 +414,7 @@ CUDA_TEST(concave_iou, concave1) {
                                3.0, 3.0, 1.0, 2.0, 3.0, 3.0, 2.0, 1.5, 1.5};
     double outArray[MAX_J] = {0};
     std::size_t outNumber = 0;
-    concavehull(cudaArray, number, outArray, outNumber);
+    concavehull<double>(cudaArray, number, outArray, outNumber);
 }
 
 #endif

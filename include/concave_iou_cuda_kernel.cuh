@@ -28,59 +28,70 @@ HOST_DEVICE_INLINE void swap_double(double &x, double &y) {
     y = tmp;
 }
 
+template <typename scalar_t>
+HOST_DEVICE_INLINE void _swap(scalar_t &x, scalar_t &y) {
+    scalar_t tmp = x;
+    x = y;
+    y = tmp;
+}
+
 // https://stackoverflow.com/questions/33333363/built-in-mod-vs-custom-mod-function-improve-the-performance-of-modulus-op/33333636#33333636
 HOST_DEVICE_INLINE size_t fast_mod(const size_t i, const size_t c) {
     return i >= c ? i % c : i;
 }
 
 // Kahan and Babuska summation, Neumaier variant; accumulates less FP error
-HOST_DEVICE_INLINE double sum(const double *x, const int n) {
-    double sum = x[0];
-    double err = 0.0;
+template <typename scalar_t>
+HOST_DEVICE_INLINE scalar_t sum(const scalar_t *x, const int n) {
+    scalar_t sum = x[0];
+    scalar_t err = 0.0;
 
     for (size_t i = 1; i < n; i++) {
-        const double k = x[i];
-        const double m = sum + k;
+        const scalar_t k = x[i];
+        const scalar_t m = sum + k;
         err += std::fabs(sum) >= std::fabs(k) ? sum - m + k : k - m + sum;
         sum = m;
     }
     return sum + err;
 }
 
-HOST_DEVICE_INLINE double dist(const double ax, const double ay,
-                               const double bx, const double by) {
-    const double dx = ax - bx;
-    const double dy = ay - by;
+template <typename scalar_t>
+HOST_DEVICE_INLINE scalar_t dist(const scalar_t ax, const scalar_t ay,
+                                 const scalar_t bx, const scalar_t by) {
+    const scalar_t dx = ax - bx;
+    const scalar_t dy = ay - by;
     return dx * dx + dy * dy;
 }
 
-HOST_DEVICE_INLINE double circumradius(const double ax, const double ay,
-                                       const double bx, const double by,
-                                       const double cx, const double cy) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE scalar_t circumradius(const scalar_t ax, const scalar_t ay,
+                                         const scalar_t bx, const scalar_t by,
+                                         const scalar_t cx, const scalar_t cy) {
     // 计算圆半径
-    const double dx = bx - ax;
-    const double dy = by - ay;
-    const double ex = cx - ax;
-    const double ey = cy - ay;
+    const scalar_t dx = bx - ax;
+    const scalar_t dy = by - ay;
+    const scalar_t ex = cx - ax;
+    const scalar_t ey = cy - ay;
 
-    const double bl = dx * dx + dy * dy;
-    const double cl = ex * ex + ey * ey;
-    const double d = dx * ey - dy * ex;
+    const scalar_t bl = dx * dx + dy * dy;
+    const scalar_t cl = ex * ex + ey * ey;
+    const scalar_t d = dx * ey - dy * ex;
 
-    const double x = (ey * bl - dy * cl) * 0.5 / d;
-    const double y = (dx * cl - ex * bl) * 0.5 / d;
+    const scalar_t x = (ey * bl - dy * cl) * 0.5 / d;
+    const scalar_t y = (dx * cl - ex * bl) * 0.5 / d;
 
     if ((bl > 0.0 || bl < 0.0) && (cl > 0.0 || cl < 0.0) &&
         (d > 0.0 || d < 0.0)) {
         return x * x + y * y;
     } else {
-        return std::numeric_limits<double>::max();
+        return std::numeric_limits<scalar_t>::max();
     }
 }
 
-HOST_DEVICE_INLINE bool orient(const double px, const double py,
-                               const double qx, const double qy,
-                               const double rx, const double ry) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE bool orient(const scalar_t px, const scalar_t py,
+                               const scalar_t qx, const scalar_t qy,
+                               const scalar_t rx, const scalar_t ry) {
     // ! 逆时针方向为真
     // (y2 - y1) * (x3 - x2) + (x2 - x1) * (y3 - y2)
     // https://www.geeksforgeeks.org/orientation-3-ordered-points/
@@ -88,78 +99,73 @@ HOST_DEVICE_INLINE bool orient(const double px, const double py,
     return (qy - py) * (rx - qx) - (qx - px) * (ry - qy) < 0.0;
 }
 
-HOST_DEVICE_INLINE void circumcenter(const double ax, const double ay,
-                                     const double bx, const double by,
-                                     const double cx, const double cy,
-                                     double &x, double &y) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE void circumcenter(const scalar_t ax, const scalar_t ay,
+                                     const scalar_t bx, const scalar_t by,
+                                     const scalar_t cx, const scalar_t cy,
+                                     scalar_t &x, scalar_t &y) {
     // 计算圆心
-    const double dx = bx - ax;
-    const double dy = by - ay;
-    const double ex = cx - ax;
-    const double ey = cy - ay;
+    const scalar_t dx = bx - ax;
+    const scalar_t dy = by - ay;
+    const scalar_t ex = cx - ax;
+    const scalar_t ey = cy - ay;
 
-    const double bl = dx * dx + dy * dy;
-    const double cl = ex * ex + ey * ey;
-    const double d = dx * ey - dy * ex;
+    const scalar_t bl = dx * dx + dy * dy;
+    const scalar_t cl = ex * ex + ey * ey;
+    const scalar_t d = dx * ey - dy * ex;
 
     x = ax + (ey * bl - dy * cl) * 0.5 / d;
     y = ay + (dx * cl - ex * bl) * 0.5 / d;
 }
 
-HOST_DEVICE_INLINE bool in_circle(const double ax, const double ay,
-                                  const double bx, const double by,
-                                  const double cx, const double cy,
-                                  const double px, const double py) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE bool in_circle(const scalar_t ax, const scalar_t ay,
+                                  const scalar_t bx, const scalar_t by,
+                                  const scalar_t cx, const scalar_t cy,
+                                  const scalar_t px, const scalar_t py) {
     // 判断 p 是否在 abc 组成的圆内
-    const double dx = ax - px;
-    const double dy = ay - py;
-    const double ex = bx - px;
-    const double ey = by - py;
-    const double fx = cx - px;
-    const double fy = cy - py;
+    const scalar_t dx = ax - px;
+    const scalar_t dy = ay - py;
+    const scalar_t ex = bx - px;
+    const scalar_t ey = by - py;
+    const scalar_t fx = cx - px;
+    const scalar_t fy = cy - py;
 
-    const double ap = dx * dx + dy * dy;
-    const double bp = ex * ex + ey * ey;
-    const double cp = fx * fx + fy * fy;
+    const scalar_t ap = dx * dx + dy * dy;
+    const scalar_t bp = ex * ex + ey * ey;
+    const scalar_t cp = fx * fx + fy * fy;
 
     return (dx * (ey * cp - bp * fy) - dy * (ex * cp - bp * fx) +
             ap * (ex * fy - ey * fx)) < 0.0;
 }
 
-constexpr double EPSILON = std::numeric_limits<double>::epsilon();
 constexpr std::size_t INVALID_INDEX = std::numeric_limits<std::size_t>::max();
 
-HOST_DEVICE_INLINE bool check_pts_equal(double x1, double y1, double x2,
-                                        double y2) {
-    return std::fabs(x1 - x2) <= EPSILON && std::fabs(y1 - y2) <= EPSILON;
+template <typename scalar_t>
+HOST_DEVICE_INLINE bool check_pts_equal(scalar_t x1, scalar_t y1, scalar_t x2,
+                                        scalar_t y2) {
+    return std::fabs(x1 - x2) <= std::numeric_limits<scalar_t>::epsilon() &&
+           std::fabs(y1 - y2) <= std::numeric_limits<scalar_t>::epsilon();
 }
 
 // monotonically increases with real angle, but doesn't need expensive
 // trigonometry
-HOST_DEVICE_INLINE double pseudo_angle(const double dx, const double dy) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE double pseudo_angle(const scalar_t dx, const scalar_t dy) {
     // https://computergraphics.stackexchange.com/a/10523
     // TODO:
     // 好像是使用伪角可以做到和反三角函数一样的单调性，然后将三角函数对应的圆投影到
     // 0-1 区间。
-    const double p = dx / (std::abs(dx) + std::abs(dy));
+    const scalar_t p = dx / (std::abs(dx) + std::abs(dy));
     return (dy > 0.0 ? 3.0 - p : 1.0 + p) / 4.0; // [0..1)
 }
 
-struct DelaunatorPoint {
-    std::size_t i;
-    double x;
-    double y;
-    std::size_t t;
-    std::size_t prev;
-    std::size_t next;
-    bool removed;
-};
-
 #define POINTS_NUMBER 500
 const int MAX_TRIANGLES = POINTS_NUMBER < 3 ? 1 : 2 * POINTS_NUMBER - 5;
-struct Delaunator {
+
+template <typename scalar_t> struct Delaunator {
   public:
-    double coords[POINTS_NUMBER * 2];
+    scalar_t coords[POINTS_NUMBER * 2];
     // 边映射到向量起点, 多对一
     std::size_t triangles[MAX_TRIANGLES * 3];
     std::size_t triangles_size;
@@ -175,28 +181,29 @@ struct Delaunator {
     std::size_t hull_tri[POINTS_NUMBER * 2];
     std::size_t hull_start;
 
-    HOST_DEVICE_INLINE Delaunator(double *in_coords, const std::size_t length);
+    HOST_DEVICE_INLINE Delaunator(scalar_t *in_coords,
+                                  const std::size_t length);
 
-    HOST_DEVICE_INLINE double get_hull_area();
-    HOST_DEVICE_INLINE void get_hull_coords(double *hull_coords,
+    HOST_DEVICE_INLINE scalar_t get_hull_area();
+    HOST_DEVICE_INLINE void get_hull_coords(scalar_t *hull_coords,
                                             std::size_t &hull_coords_size);
     HOST_DEVICE_INLINE void get_hull_points(std::size_t *hull_pts,
                                             std::size_t &hull_pts_size);
-    HOST_DEVICE_INLINE double edge_length(std::size_t e);
+    HOST_DEVICE_INLINE scalar_t edge_length(std::size_t e);
     HOST_DEVICE_INLINE std::size_t get_interior_point(std::size_t e);
 
   private:
     std::size_t m_hash[POINTS_NUMBER];
-    double m_center_x;
-    double m_center_y;
+    scalar_t m_center_x;
+    scalar_t m_center_y;
     std::size_t m_hash_size;
 
     std::size_t m_edge_stack[MAX_TRIANGLES * 3];
     std::size_t m_edge_stack_size;
 
     HOST_DEVICE_INLINE std::size_t legalize(std::size_t a);
-    HOST_DEVICE_INLINE std::size_t hash_key(const double x,
-                                            const double y) const;
+    HOST_DEVICE_INLINE std::size_t hash_key(const scalar_t x,
+                                            const scalar_t y) const;
     HOST_DEVICE_INLINE std::size_t add_triangle(std::size_t i0, std::size_t i1,
                                                 std::size_t i2, std::size_t a,
                                                 std::size_t b, std::size_t c);
@@ -205,8 +212,9 @@ struct Delaunator {
     HOST_DEVICE_INLINE bool compare(std::size_t i, std::size_t j);
 };
 
-HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
-                                          const std::size_t length) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE Delaunator<scalar_t>::Delaunator(scalar_t *in_coords,
+                                                    const std::size_t length) {
     // intialize
 
     for (size_t i = 0; i < length; i++)
@@ -218,17 +226,17 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
 
     // initialize
 
-    double max_x = std::numeric_limits<double>::min();
-    double max_y = std::numeric_limits<double>::min();
-    double min_x = std::numeric_limits<double>::max();
-    double min_y = std::numeric_limits<double>::max();
+    scalar_t max_x = std::numeric_limits<scalar_t>::min();
+    scalar_t max_y = std::numeric_limits<scalar_t>::min();
+    scalar_t min_x = std::numeric_limits<scalar_t>::max();
+    scalar_t min_y = std::numeric_limits<scalar_t>::max();
 
     std::size_t ids[POINTS_NUMBER];
 
     // 坐标轴方向的矩形包围盒
     for (std::size_t i = 0; i < n; i++) {
-        const double x = coords[2 * i];
-        const double y = coords[2 * i + 1];
+        const scalar_t x = coords[2 * i];
+        const scalar_t y = coords[2 * i + 1];
 
         if (x < min_x)
             min_x = x;
@@ -243,9 +251,9 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     }
 
     // 矩形包围盒中心
-    const double cx = (min_x + max_x) / 2;
-    const double cy = (min_y + max_y) / 2;
-    double min_dist = std::numeric_limits<double>::max();
+    const scalar_t cx = (min_x + max_x) / 2;
+    const scalar_t cy = (min_y + max_y) / 2;
+    scalar_t min_dist = std::numeric_limits<scalar_t>::max();
 
     // 到矩形包围盒中心最小的点
     std::size_t i0 = INVALID_INDEX;
@@ -256,34 +264,34 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     // 计算每个点到矩形中心的距离，选出最小点 i0
     // pick a seed point close to the centroid
     for (std::size_t i = 0; i < n; i++) {
-        const double d = dist(cx, cy, coords[2 * i], coords[2 * i + 1]);
+        const scalar_t d = dist(cx, cy, coords[2 * i], coords[2 * i + 1]);
         if (d < min_dist) {
             i0 = i;
             min_dist = d;
         }
     }
 
-    const double i0x = coords[2 * i0];
-    const double i0y = coords[2 * i0 + 1];
+    const scalar_t i0x = coords[2 * i0];
+    const scalar_t i0y = coords[2 * i0 + 1];
 
-    min_dist = std::numeric_limits<double>::max();
+    min_dist = std::numeric_limits<scalar_t>::max();
 
     // 计算每个点到 i0 的距离，选出最小点 i1
     // find the point closest to the seed
     for (std::size_t i = 0; i < n; i++) {
         if (i == i0)
             continue;
-        const double d = dist(i0x, i0y, coords[2 * i], coords[2 * i + 1]);
+        const scalar_t d = dist(i0x, i0y, coords[2 * i], coords[2 * i + 1]);
         if (d < min_dist && d > 0.0) {
             i1 = i;
             min_dist = d;
         }
     }
 
-    double i1x = coords[2 * i1];
-    double i1y = coords[2 * i1 + 1];
+    scalar_t i1x = coords[2 * i1];
+    scalar_t i1y = coords[2 * i1 + 1];
 
-    double min_radius = std::numeric_limits<double>::max();
+    scalar_t min_radius = std::numeric_limits<scalar_t>::max();
 
     // 遍历所有点，找出共圆后半径最小的点 i2
     // find the third point which forms the smallest circumcircle with the first
@@ -292,7 +300,7 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         if (i == i0 || i == i1)
             continue;
 
-        const double r =
+        const scalar_t r =
             circumradius(i0x, i0y, i1x, i1y, coords[2 * i], coords[2 * i + 1]);
 
         if (r < min_radius) {
@@ -301,19 +309,19 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
         }
     }
 
-    if (!(min_radius < std::numeric_limits<double>::max())) {
+    if (!(min_radius < std::numeric_limits<scalar_t>::max())) {
         // TODO: throw CUDA error
         // throw std::runtime_error("not triangulation");
     }
 
-    double i2x = coords[2 * i2];
-    double i2y = coords[2 * i2 + 1];
+    scalar_t i2x = coords[2 * i2];
+    scalar_t i2y = coords[2 * i2 + 1];
 
     // 保证 i0 -> i1 -> i2 就是顺时针方向
     if (orient(i0x, i0y, i1x, i1y, i2x, i2y)) {
-        swap_size_t(i1, i2);
-        swap_double(i1x, i2x);
-        swap_double(i1y, i2y);
+        _swap<std::size_t>(i1, i2);
+        _swap<scalar_t>(i1x, i2x);
+        _swap<scalar_t>(i1y, i2y);
     }
 
     // i0, i1, i2 三点共圆圆心
@@ -354,15 +362,15 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     m_hash[hash_key(i2x, i2y)] = i2;
 
     add_triangle(i0, i1, i2, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX);
-    double xp = std::numeric_limits<double>::quiet_NaN();
-    double yp = std::numeric_limits<double>::quiet_NaN();
+    scalar_t xp = std::numeric_limits<scalar_t>::quiet_NaN();
+    scalar_t yp = std::numeric_limits<scalar_t>::quiet_NaN();
 
     for (std::size_t k = 0; k < n; k++) {
         // 遍历所有点，此时 ids 是从小到大的顺序
         // i 表示当前点
         const std::size_t i = ids[k];
-        const double x = coords[2 * i];
-        const double y = coords[2 * i + 1];
+        const scalar_t x = coords[2 * i];
+        const scalar_t y = coords[2 * i + 1];
 
         // skip near-duplicate points
         // 保证当前点不和上一个点重合
@@ -478,14 +486,16 @@ HOST_DEVICE_INLINE Delaunator::Delaunator(double *in_coords,
     }
 }
 
-HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t i, std::size_t j) {
-    const double d1 = dist(coords[2 * i], coords[2 * i + 1], this->m_center_x,
-                           this->m_center_y);
-    const double d2 = dist(coords[2 * j], coords[2 * j + 1], this->m_center_x,
-                           this->m_center_y);
-    const double diff1 = d1 - d2;
-    const double diff2 = coords[2 * i] - coords[2 * j];
-    const double diff3 = coords[2 * i + 1] - coords[2 * j + 1];
+template <typename scalar_t>
+HOST_DEVICE_INLINE bool Delaunator<scalar_t>::compare(std::size_t i,
+                                                      std::size_t j) {
+    const scalar_t d1 = dist(coords[2 * i], coords[2 * i + 1], this->m_center_x,
+                             this->m_center_y);
+    const scalar_t d2 = dist(coords[2 * j], coords[2 * j + 1], this->m_center_x,
+                             this->m_center_y);
+    const scalar_t diff1 = d1 - d2;
+    const scalar_t diff2 = coords[2 * i] - coords[2 * j];
+    const scalar_t diff3 = coords[2 * i + 1] - coords[2 * j + 1];
 
     if (diff1 > 0.0 || diff1 < 0.0) {
         return diff1 < 0;
@@ -496,18 +506,20 @@ HOST_DEVICE_INLINE bool Delaunator::compare(std::size_t i, std::size_t j) {
     }
 }
 
-HOST_DEVICE_INLINE std::size_t Delaunator::hash_key(const double x,
-                                                    const double y) const {
-    const double dx = x - m_center_x;
-    const double dy = y - m_center_y;
+template <typename scalar_t>
+HOST_DEVICE_INLINE std::size_t
+Delaunator<scalar_t>::hash_key(const scalar_t x, const scalar_t y) const {
+    const scalar_t dx = x - m_center_x;
+    const scalar_t dy = y - m_center_y;
     return fast_mod(
         static_cast<std::size_t>(std::llround(std::floor(
-            pseudo_angle(dx, dy) * static_cast<double>(m_hash_size)))),
+            pseudo_angle(dx, dy) * static_cast<scalar_t>(m_hash_size)))),
         m_hash_size);
 }
 
-HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
-                                         const std::size_t b) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE void Delaunator<scalar_t>::link(const std::size_t a,
+                                                   const std::size_t b) {
     // 建立无向图
     // halfedges[i] = j: 第 i 条边对应的第 j 条边
     // ! 强假设: 相邻两个三角形边按顺时针排列，重叠的两条边一定方向相反
@@ -534,9 +546,11 @@ HOST_DEVICE_INLINE void Delaunator::link(const std::size_t a,
     }
 }
 
+template <typename scalar_t>
 HOST_DEVICE_INLINE std::size_t
-Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
-                         std::size_t a, std::size_t b, std::size_t c) {
+Delaunator<scalar_t>::add_triangle(std::size_t i0, std::size_t i1,
+                                   std::size_t i2, std::size_t a, std::size_t b,
+                                   std::size_t c) {
     // 输入的三个点 i0, i1, i2 保证为顺时针方向
     // 前三个参数为新三角形的三个点，会在这个函数里面映射到 halfedge
     // 后三个参数为已经记录过的 halfedge，与新的 halfedge 进行 link
@@ -550,7 +564,8 @@ Delaunator::add_triangle(std::size_t i0, std::size_t i1, std::size_t i2,
     return t;
 }
 
-HOST_DEVICE_INLINE std::size_t Delaunator::legalize(std::size_t a) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE std::size_t Delaunator<scalar_t>::legalize(std::size_t a) {
     // 第 a 条 halfedge
     std::size_t i = 0;
     std::size_t ar = 0;
@@ -651,8 +666,9 @@ HOST_DEVICE_INLINE std::size_t Delaunator::legalize(std::size_t a) {
     return ar;
 }
 
-HOST_DEVICE_INLINE double Delaunator::get_hull_area() {
-    double hull_area[POINTS_NUMBER * 2];
+template <typename scalar_t>
+HOST_DEVICE_INLINE scalar_t Delaunator<scalar_t>::get_hull_area() {
+    scalar_t hull_area[POINTS_NUMBER * 2];
     std::size_t hull_area_size = 0;
 
     std::size_t e = hull_start;
@@ -665,8 +681,10 @@ HOST_DEVICE_INLINE double Delaunator::get_hull_area() {
     return sum(hull_area, hull_area_size);
 }
 
+template <typename scalar_t>
 HOST_DEVICE_INLINE void
-Delaunator::get_hull_points(std::size_t *hull_pts, std::size_t &hull_pts_size) {
+Delaunator<scalar_t>::get_hull_points(std::size_t *hull_pts,
+                                      std::size_t &hull_pts_size) {
     hull_pts_size = 0;
     std::size_t point = hull_start;
     do {
@@ -678,9 +696,10 @@ Delaunator::get_hull_points(std::size_t *hull_pts, std::size_t &hull_pts_size) {
     hull_pts[hull_pts_size++] = hull_start;
 }
 
+template <typename scalar_t>
 HOST_DEVICE_INLINE void
-Delaunator::get_hull_coords(double *hull_coords,
-                            std::size_t &hull_coords_size) {
+Delaunator<scalar_t>::get_hull_coords(scalar_t *hull_coords,
+                                      std::size_t &hull_coords_size) {
     std::size_t hull_pts[POINTS_NUMBER];
     std::size_t hull_pts_size = 0;
     get_hull_points(hull_pts, hull_pts_size);
@@ -688,26 +707,29 @@ Delaunator::get_hull_coords(double *hull_coords,
     hull_coords_size = 0;
     for (std::size_t i = 0; i < hull_pts_size; ++i) {
         auto point = hull_pts[i];
-        double x = coords[2 * point];
-        double y = coords[2 * point + 1];
+        scalar_t x = coords[2 * point];
+        scalar_t y = coords[2 * point + 1];
         hull_coords[hull_coords_size++] = x;
         hull_coords[hull_coords_size++] = y;
     }
 }
 
-HOST_DEVICE_INLINE double Delaunator::edge_length(std::size_t e_a) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE scalar_t Delaunator<scalar_t>::edge_length(std::size_t e_a) {
     size_t e_b = next_halfedge(e_a);
 
-    double x_a = coords[2 * triangles[e_a]];
-    double y_a = coords[2 * triangles[e_a] + 1];
+    scalar_t x_a = coords[2 * triangles[e_a]];
+    scalar_t y_a = coords[2 * triangles[e_a] + 1];
 
-    double x_b = coords[2 * triangles[e_b]];
-    double y_b = coords[2 * triangles[e_b] + 1];
+    scalar_t x_b = coords[2 * triangles[e_b]];
+    scalar_t y_b = coords[2 * triangles[e_b] + 1];
 
     return std::sqrt(std::pow(x_a - x_b, 2) + std::pow(y_a - y_b, 2));
 }
 
-HOST_DEVICE_INLINE size_t Delaunator::get_interior_point(std::size_t e) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE size_t
+Delaunator<scalar_t>::get_interior_point(std::size_t e) {
     return triangles[next_halfedge(next_halfedge(e))];
 }
 
@@ -715,8 +737,9 @@ HOST_DEVICE_INLINE size_t Delaunator::get_interior_point(std::size_t e) {
 
 // Concave hull
 
+template <typename scalar_t>
 HOST_DEVICE_INLINE void sort_bheap(std::size_t *bheap, std::size_t bheap_size,
-                                   double *edges_length) {
+                                   scalar_t *edges_length) {
     for (std::size_t i = 0; i < bheap_size; ++i)
         bheap[i] = i;
 
@@ -737,17 +760,17 @@ HOST_DEVICE_INLINE bool exist(std::size_t *bpoints, std::size_t bpoints_size,
     return false;
 }
 
-HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
-                                    double *concaveCoords,
-                                    std::size_t &concaveCoords_size,
-                                    double chi_factor = 0.1) {
+template <typename scalar_t>
+HOST_DEVICE_INLINE void
+concavehull(scalar_t *coords, std::size_t coords_size, scalar_t *concaveCoords,
+            std::size_t &concaveCoords_size, scalar_t chi_factor = 0.1) {
     if (chi_factor < 0 || chi_factor > 1) {
         // TODO: cuda throw error
         // throw std::invalid_argument(
         //     "Chi factor must be between 0 and 1 inclusive");
     }
 
-    Delaunator d(coords, coords_size);
+    Delaunator<scalar_t> d(coords, coords_size);
 
     // Determine initial points on outside hull
     // 历史点集合
@@ -758,12 +781,12 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
     // 用来排序的索引
     std::size_t bheap[POINTS_NUMBER];
     std::size_t bheap_size = bpoints_size;
-    double max_len = std::numeric_limits<double>::min();
-    double min_len = std::numeric_limits<double>::max();
+    scalar_t max_len = std::numeric_limits<scalar_t>::min();
+    scalar_t min_len = std::numeric_limits<scalar_t>::max();
 
     // 边以及对应的长度
     std::size_t edges[POINTS_NUMBER];
-    double edges_length[POINTS_NUMBER];
+    scalar_t edges_length[POINTS_NUMBER];
 
     // 初始化
     for (std::size_t i = 0; i < bpoints_size; ++i) {
@@ -777,7 +800,7 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
     sort_bheap(bheap, bheap_size, edges_length);
 
     // Determine length parameter
-    double length_param = chi_factor * max_len + (1 - chi_factor) * min_len;
+    scalar_t length_param = chi_factor * max_len + (1 - chi_factor) * min_len;
 
     // Iteratively add points to boundary by iterating over the triangles on the
     // hull
@@ -786,7 +809,7 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
         std::size_t tmp = bheap[bheap_size - 1];
         bheap_size--;
         std::size_t e = edges[tmp];
-        double len = edges_length[tmp];
+        scalar_t len = edges_length[tmp];
 
         // Length of edge too small for our chi factor
         if (len <= length_param) {
@@ -812,8 +835,8 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
         size_t e_a = d.halfedges[next_halfedge(next_halfedge(e))];
 
         // Add edges to heap
-        double len_a = d.edge_length(e_a);
-        double len_b = d.edge_length(e_b);
+        scalar_t len_a = d.edge_length(e_a);
+        scalar_t len_b = d.edge_length(e_b);
 
         edges[bheap_size] = e_a, edges[bheap_size + 1] = e_b;
         edges_length[bheap_size] = len_a, edges_length[bheap_size + 1] = len_b;
@@ -833,6 +856,20 @@ HOST_DEVICE_INLINE void concavehull(double *coords, std::size_t coords_size,
 
     d.get_hull_coords(concaveCoords, concaveCoords_size);
 }
+
+/*
+template <typename scalar_t>
+HOST_DEVICE_INLINE float
+concaveIoU(const T *predict, const std::size_t predict_size,
+           const T *groundtruth, const std::size_t groundtruth_size,
+           const scalar_t chi_factor = 0.1) {
+  T predict_concave[POINTS_NUMBER];
+  std::size_t predict_concave_size = 0;
+  concavehull<scalar_t>(predict, predict_size, predict_concave,
+                        predict_concave_size, chi_factor);
+}
+*/
+
 // Concave hull
 
 // Cuda kernel
@@ -857,11 +894,12 @@ __global__ void concave_hull_cuda_kernel(std::size_t n_group,
         // 每行第一个为输出的凹包的点坐标数目
         double *current_output = output + index * (n_coords + 3) + 1;
         std::size_t concaveCoords_size = 0;
-        concavehull(current_points, n_coords, current_output,
-                    concaveCoords_size, chi_factor);
+        concavehull<double>(current_points, n_coords, current_output,
+                            concaveCoords_size, chi_factor);
         output[index * (n_coords + 3)] = concaveCoords_size;
     }
 }
+
 template <typename T>
 __global__ void concave_iou_cuda_kernel(const int ex_n_boxes,
                                         const int gt_n_boxes, const T *ex_boxes,
