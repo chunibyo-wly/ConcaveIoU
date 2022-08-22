@@ -1,3 +1,7 @@
+// Copyright (c) OpenMMLab. All rights reserved
+#ifndef CONCAVE_IOU_CUDA_KERNEL_CUH
+#define CONCAVE_IOU_CUDA_KERNEL_CUH
+
 #include "convex_iou_cuda_kernel.cuh"
 #include "pytorch_cuda_helper.hpp"
 
@@ -181,7 +185,7 @@ template <typename scalar_t> struct Delaunator {
     std::size_t hull_tri[POINTS_NUMBER * 2];
     std::size_t hull_start;
 
-    HOST_DEVICE_INLINE Delaunator(scalar_t *in_coords,
+    HOST_DEVICE_INLINE Delaunator(const scalar_t *in_coords,
                                   const std::size_t length);
 
     HOST_DEVICE_INLINE scalar_t get_hull_area();
@@ -213,7 +217,7 @@ template <typename scalar_t> struct Delaunator {
 };
 
 template <typename scalar_t>
-HOST_DEVICE_INLINE Delaunator<scalar_t>::Delaunator(scalar_t *in_coords,
+HOST_DEVICE_INLINE Delaunator<scalar_t>::Delaunator(const scalar_t *in_coords,
                                                     const std::size_t length) {
     // intialize
 
@@ -762,8 +766,9 @@ HOST_DEVICE_INLINE bool exist(std::size_t *bpoints, std::size_t bpoints_size,
 
 template <typename scalar_t>
 HOST_DEVICE_INLINE void
-concavehull(scalar_t *coords, std::size_t coords_size, scalar_t *concaveCoords,
-            std::size_t &concaveCoords_size, scalar_t chi_factor = 0.1) {
+concavehull(const scalar_t *coords, const std::size_t coords_size,
+            scalar_t *concaveCoords, std::size_t &concaveCoords_size,
+            const scalar_t chi_factor = 0.1) {
     if (chi_factor < 0 || chi_factor > 1) {
         // TODO: cuda throw error
         // throw std::invalid_argument(
@@ -857,18 +862,34 @@ concavehull(scalar_t *coords, std::size_t coords_size, scalar_t *concaveCoords,
     d.get_hull_coords(concaveCoords, concaveCoords_size);
 }
 
-/*
 template <typename scalar_t>
 HOST_DEVICE_INLINE float
-concaveIoU(const T *predict, const std::size_t predict_size,
-           const T *groundtruth, const std::size_t groundtruth_size,
+concaveIoU(const scalar_t *predict, const std::size_t predict_size,
+           const scalar_t *groundtruth, const std::size_t groundtruth_size,
            const scalar_t chi_factor = 0.1) {
-  T predict_concave[POINTS_NUMBER];
-  std::size_t predict_concave_size = 0;
-  concavehull<scalar_t>(predict, predict_size, predict_concave,
-                        predict_concave_size, chi_factor);
+    scalar_t predict_concave[POINTS_NUMBER];
+    std::size_t predict_concave_size = 0;
+    concavehull<scalar_t>(predict, predict_size, predict_concave,
+                          predict_concave_size, chi_factor);
+
+    Point ps1[POINTS_NUMBER], ps2[POINTS_NUMBER];
+
+    int n1 = predict_concave_size / 2 - 1;
+    for (std::size_t i = 0; i < n1; ++i)
+        ps1[i].x = (double)predict_concave[2 * i],
+        ps1[i].y = (double)predict_concave[2 * i + 1];
+
+    int n2 = groundtruth_size / 2;
+    for (std::size_t i = 0; i < n2; ++i)
+        ps2[i].x = (double)groundtruth[2 * i],
+        ps2[i].y = (double)groundtruth[2 * i + 1];
+
+    double inter_area = intersectAreaO(ps1, n1, ps2, n2);
+    double S_pred = area(ps1, n1);
+    double union_area = fabs(S_pred) + fabs(area(ps2, n2)) - inter_area;
+    double iou = inter_area / union_area;
+    return (float)iou;
 }
-*/
 
 // Concave hull
 
@@ -912,3 +933,5 @@ __global__ void concave_iou_cuda_kernel(const int ex_n_boxes,
     }
 }
 // Cuda kernel
+
+#endif // CONCAVE_IOU_CUDA_KERNEL_CUH
