@@ -891,6 +891,123 @@ concaveIoU(const scalar_t *predict, const std::size_t predict_size,
     return (float)iou;
 }
 
+HOST_DEVICE_INLINE double polygon_area_grad2(Point *ps, int n,
+                                             int *polygon_to_pred_index,
+                                             int n_pred, double *grad_C) {
+    ps[n] = ps[0];
+    double partion_grad[4 * POINTS_NUMBER + 2];
+    double res = 0;
+    for (int i = 0; i < n; i++) {
+        res += ps[i].x * ps[i + 1].y - ps[i].y * ps[i + 1].x;
+        partion_grad[i * 4 + 2] = ps[i + 1].y;
+        partion_grad[i * 4 + 3] = -ps[i + 1].x;
+        if (i != n - 1) {
+            partion_grad[i * 4 + 4] = -ps[i].y;
+            partion_grad[i * 4 + 5] = ps[i].x;
+        } else {
+            partion_grad[0] = -ps[i].y;
+            partion_grad[1] = ps[i].x;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n_pred; j++) {
+            if (i == polygon_to_pred_index[j]) {
+                grad_C[2 * polygon_to_pred_index[j + n_pred]] =
+                    (partion_grad[i * 4] + partion_grad[i * 4 + 2]) / 2;
+                break;
+            }
+        }
+        for (int j = 0; j < n_pred; j++) {
+            if (i == polygon_to_pred_index[j]) {
+                grad_C[2 * polygon_to_pred_index[j + n_pred] + 1] =
+                    (partion_grad[i * 4 + 1] + partion_grad[i * 4 + 1 + 2]) / 2;
+                break;
+            }
+        }
+    }
+
+    return res / 2.0;
+}
+
+template <typename scalar_t>
+HOST_DEVICE_INLINE float
+concaveIoU(const scalar_t *predict, const std::size_t predict_size,
+           const scalar_t *groundtruth, const std::size_t groundtruth_size,
+           scalar_t *grad, const scalar_t chi_factor = 0.1) {
+    // 带梯度的 iou
+    scalar_t predict_concave[POINTS_NUMBER];
+    std::size_t predict_concave_size = 0;
+    concavehull<scalar_t>(predict, predict_size, predict_concave,
+                          predict_concave_size, chi_factor);
+
+    Point ps1[POINTS_NUMBER], ps2[POINTS_NUMBER];
+
+    // 预测的凹包点
+    int n1 = predict_concave_size / 2 - 1;
+    for (std::size_t i = 0; i < n1; ++i)
+        ps1[i].x = (double)predict_concave[2 * i],
+        ps1[i].y = (double)predict_concave[2 * i + 1];
+    reverse1(ps1, n1);
+
+    // 真值
+    int n2 = groundtruth_size / 2;
+    for (std::size_t i = 0; i < n2; ++i)
+        ps2[i].x = (double)groundtruth[2 * i],
+        ps2[i].y = (double)groundtruth[2 * i + 1];
+
+    int points_to_concave_ind[POINTS_NUMBER];
+    for (int i = 0; i < POINTS_NUMBER; ++i)
+        points_to_concave_ind[i] = -1;
+
+    for (std::size_t i = 0; i < n1; ++i) {
+        for (std::size_t j = 0; j < predict_size / 2; ++j) {
+            auto p = Point(predict[j * 2], predict[j * 2 + 1]);
+            if (point_same(ps1[i], p)) {
+                points_to_concave_ind[i] = j;
+                break;
+            }
+        }
+    }
+
+    int polygon_index_box_index[POINTS_NUMBER * 2];
+    for (int i = 0; i < n1; i++) {
+        polygon_index_box_index[i] = i;
+        polygon_index_box_index[i + n1] = i;
+    }
+
+    // 预测值 - 面积
+    double grad_A[POINTS_NUMBER * 2] = {0};
+    // 预测值、真值交 - 面积
+    double grad_AB[POINTS_NUMBER * 2] = {0};
+    // 两个框的最小闭包区域 - 面积
+    double grad_C[POINTS_NUMBER * 2] = {0};
+
+    double inter_area = intersectAreaO(ps1, n1, ps2, n2, grad_AB);
+    double S_pred =
+        polygon_area_grad2(ps1, n1, polygon_index_box_index, n1, grad_A);
+    if (S_pred < 0) {
+        for (int i = 0; i < n1 * 2; i++) {
+            grad_A[i] = -grad_A[i];
+        }
+    }
+    double union_area = fabs(S_pred) + fabs(area(ps2, n2)) - inter_area;
+    double iou = inter_area / union_area;
+
+    for (int i = 0; i < n1; i++) {
+        int grad_point = points_to_concave_ind[i];
+        grad[2 * grad_point] =
+            (float)((union_area + inter_area) / (union_area * union_area) *
+                        grad_AB[2 * i] -
+                    iou / union_area * grad_A[2 * i]);
+        grad[2 * grad_point + 1] =
+            (float)((union_area + inter_area) / (union_area * union_area) *
+                        grad_AB[2 * i + 1] -
+                    iou / union_area * grad_A[2 * i + 1]);
+    }
+
+    return (float)iou;
+}
+
 // Concave hull
 
 // Cuda kernel
@@ -922,14 +1039,39 @@ __global__ void concave_hull_cuda_kernel(std::size_t n_group,
 }
 
 template <typename T>
-__global__ void concave_iou_cuda_kernel(const int ex_n_boxes,
-                                        const int gt_n_boxes, const T *ex_boxes,
-                                        const T *gt_boxes, T *iou) {
-    CUDA_1D_KERNEL_LOOP(index, ex_n_boxes) {
-        const T *cur_box = ex_boxes + index * 18;
-        for (int i = 0; i < gt_n_boxes; i++) {
-            iou[index * gt_n_boxes + i] = 3;
+__global__ void
+concave_iou_cuda_kernel(const T *predict, const std::size_t n_predict_points,
+                        const std::size_t n_predict_group, const T *groundtruth,
+                        const std::size_t n_groundtruth_points,
+                        const std::size_t n_groundtruth_group,
+                        const T chi_factor, T *ious) {
+    CUDA_1D_KERNEL_LOOP(index, n_predict_group) {
+        const T *cur_predict = predict + index * n_predict_points;
+        for (std::size_t j = 0; j < n_groundtruth_group; ++j) {
+            const T *cur_groundtruth = groundtruth + j * n_groundtruth_points;
+            ious[index * n_groundtruth_group + j] =
+                concaveIoU(cur_predict, n_predict_points, cur_groundtruth,
+                           n_groundtruth_points, chi_factor);
         }
+    }
+}
+
+template <typename T>
+__global__ void concave_giou_cuda_kernel(const T *predict,
+                                         const std::size_t n_predict_points,
+                                         const std::size_t n_predict_group,
+                                         const T *groundtruth,
+                                         const std::size_t n_groundtruth_points,
+                                         const std::size_t n_groundtruth_group,
+                                         const T chi_factor, T *grad) {
+    CUDA_1D_KERNEL_LOOP(index, n_predict_group) {
+        const T *cur_predict = predict + index * n_predict_points;
+        const T *cur_groundtruth = groundtruth + index * n_groundtruth_points;
+        T *cur_grad = grad + index * (n_predict_points + 1);
+
+        T iou = concaveIoU(cur_predict, n_predict_points, cur_groundtruth,
+                           n_groundtruth_points, cur_grad, chi_factor);
+        cur_grad[n_predict_points] = iou;
     }
 }
 // Cuda kernel

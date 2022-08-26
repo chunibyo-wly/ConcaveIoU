@@ -417,7 +417,7 @@ CUDA_TEST(concave_iou, concave1) {
     concavehull<double>(cudaArray, number, outArray, outNumber);
 }
 
-CUDA_TEST(concave_iou, concaveIoU) {
+CUDA_TEST(concave_iou, concaveIoU1) {
     std::size_t predict_size = 18;
     double predict[MAX_J] = {1.0, 1.0, 2.0, 2.0, 1.0, 2.0, 2.0, 1.0, 1.0,
                              3.0, 3.0, 1.0, 2.0, 3.0, 3.0, 2.0, 1.5, 1.5};
@@ -427,8 +427,20 @@ CUDA_TEST(concave_iou, concaveIoU) {
                                  1.0, 2.0, 1.0, 3.0, 2.0, 3.0, 2.0, 2.0};
 
     auto iou = concaveIoU<double>(predict, predict_size, groundtruth,
-                                    groundtruth_size);
+                                  groundtruth_size);
     ASSERT_FLOAT_EQ(1.f, iou);
+}
+
+CUDA_TEST(concave_iou, concaveIoU2) {
+    std::size_t predict_size = 8;
+    double predict[MAX_J] = {1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 1.0};
+
+    std::size_t groundtruth_size = 8;
+    double groundtruth[MAX_J] = {1.1, 1.0, 2.1, 1.0, 2.1, 2.0, 1.1, 2.0};
+    double grad[MAX_J] = {0};
+
+    auto iou = concaveIoU<double>(predict, predict_size, groundtruth,
+                                  groundtruth_size, grad);
 }
 
 #endif
