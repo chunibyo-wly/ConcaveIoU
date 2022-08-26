@@ -642,7 +642,7 @@ HOST_DEVICE_INLINE std::size_t Delaunator<scalar_t>::legalize(std::size_t a) {
                         hull_tri[e] = a;
                         break;
                     }
-                    e = hull_next[e];
+                    e = hull_prev[e];
                 } while (e != hull_start);
             }
             link(a, hbl);
