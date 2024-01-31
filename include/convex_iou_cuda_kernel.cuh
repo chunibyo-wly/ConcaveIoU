@@ -777,10 +777,10 @@ HOST_DEVICE inline void findSymmetryPolygon(Point *polygon, int n,
             for (int i = 0; i < n; ++i) {
                 Point &p1 = polygon[i], &p2 = polygon[(i + 1) % n],
                       &p3 = polygon[(i + 2) % n];
-                double S = fabs(cross(p1, p2, p3));
+                double S = fabs(cross(p2, p1, p3));
                 if (S > max_S) {
                     max_S = S;
-                    index = i;
+                    index = (i + 1) % n;
                 }
             }
             p1 = Point(polygon[index].x, polygon[index].y);
@@ -808,6 +808,7 @@ HOST_DEVICE inline void findSymmetryPolygon(Point *polygon, int n,
         output[outputN++] = Point(maxx, maxy);
     if (sig(cross(output[0], output[1], Point(minx, maxy))) > 0)
         output[outputN++] = Point(minx, maxy);
+    Jarvis(output, outputN);
 }
 
 template <typename T>
