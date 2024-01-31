@@ -702,6 +702,114 @@ HOST_DEVICE inline float devrIoU(T const* const p, T const* const q,
   return (float)rot_giou;
 }
 
+HOST_DEVICE inline bool isApproxEqual(double &a, double &b) {
+    return sig(a - b) == 0;
+}
+
+HOST_DEVICE inline bool isRectangleOrPolygon(Point *polygon, int n) {
+    double a = dis(polygon[0], polygon[1]), b = dis(polygon[2], polygon[3]);
+    if (min(a, b) / max(a, b) > 0.97)
+        return true;
+    else
+        return false;
+}
+
+HOST_DEVICE inline void
+findIntersectionBetweenLineRectangle(Point p1, Point p2, double minx,
+                                     double miny, double maxx, double maxy,
+                                     Point *sy) {
+    double x = -1, y = -1;
+    if (isApproxEqual(p1.x, p2.x)) {
+        x = p1.x;
+        if (minx <= x && x <= maxx)
+            sy[0] = Point(x, miny), sy[1] = Point(x, maxy);
+    } else if (isApproxEqual(p1.y, p2.y)) {
+        y = p1.y;
+        if (miny <= y && y <= maxy)
+            sy[0] = Point(minx, y), sy[1] = Point(maxx, y);
+    } else {
+        double m = (p2.y - p1.y) / (p2.x - p1.x);
+        double c = p1.y - m * p1.x;
+        int cnt = 0;
+
+        // Left side
+        y = m * minx + c;
+        if (miny <= y && y <= maxy)
+            sy[cnt++] = Point(minx, y);
+
+        // Right side
+        y = m * maxx + c;
+        if (miny <= y && y <= maxy)
+            sy[cnt++] = Point(maxx, y);
+
+        // Bottom side
+        x = (miny - c) / m;
+        if (cnt < 1 && minx <= x && x <= maxx)
+            sy[cnt++] = Point(x, miny);
+
+        // Top side
+        x = (maxy - c) / m;
+        if (cnt < 1 && minx <= x && x <= maxx)
+            sy[cnt++] = Point(x, maxy);
+    }
+}
+
+HOST_DEVICE inline void findSymmetryPolygon(Point *polygon, int n,
+                                            Point *output, int &outputN) {
+    Point p1, p2;
+    for (int i = 0; i < n; ++i) {
+        if (isRectangleOrPolygon(polygon, n)) {
+            // 矩形
+            if (dis(polygon[0], polygon[1]) > dis(polygon[1], polygon[2]))
+                p1 = Point((polygon[1].x + polygon[2].x) / 2,
+                           (polygon[1].y + polygon[2].y) / 2),
+                p2 = Point((polygon[0].x + polygon[3].x) / 2,
+                           (polygon[0].y + polygon[3].y) / 2);
+            else
+                p1 = Point((polygon[0].x + polygon[1].x) / 2,
+                           (polygon[0].y + polygon[1].y) / 2),
+                p2 = Point((polygon[2].x + polygon[3].x) / 2,
+                           (polygon[2].y + polygon[3].y) / 2);
+        } else {
+            // 多边形
+            int index = -1;
+            double max_S = -1;
+            for (int i = 0; i < n; ++i) {
+                Point &p1 = polygon[i], &p2 = polygon[(i + 1) % n],
+                      &p3 = polygon[(i + 2) % n];
+                double S = fabs(cross(p1, p2, p3));
+                if (S > max_S) {
+                    max_S = S;
+                    index = i;
+                }
+            }
+            p1 = Point(polygon[index].x, polygon[index].y);
+            p2 = Point(polygon[(index + 2) % n].x, polygon[(index + 2) % n].y);
+        }
+    }
+
+    // 获取逆时针方向所有点
+    Point sy[5] = {};
+    double minx = 0, miny = 0, maxx = 10000, maxy = 10000;
+    findIntersectionBetweenLineRectangle(p1, p2, minx, miny, maxx, maxy, sy);
+
+    Point O(0, 0);
+    if (sig(cross(O, sy[0], sy[1])) < 0)
+        output[0] = sy[1], output[1] = sy[0];
+    else
+        output[0] = sy[0], output[1] = sy[1];
+
+    outputN = 2;
+    if (sig(cross(output[0], output[1], Point(minx, miny))) > 0)
+        output[outputN++] = Point(minx, miny);
+    if (sig(cross(output[0], output[1], Point(maxx, miny))) > 0)
+        output[outputN++] = Point(maxx, miny);
+    if (sig(cross(output[0], output[1], Point(maxx, maxy))) > 0)
+        output[outputN++] = Point(maxx, maxy);
+    if (sig(cross(output[0], output[1], Point(minx, maxy))) > 0)
+        output[outputN++] = Point(minx, maxy);
+}
+
 template <typename T>
 HOST_DEVICE inline float devrSymmetryIOU(T const *const p, T const *const q,
                                          T const *const symmetry, T *point_grad,
@@ -785,25 +893,17 @@ HOST_DEVICE inline float devrSymmetryIOU(T const *const p, T const *const q,
     // SymmetryIoU
     Point syPs[6];
     int syN = 0;
-    for (int i = 0; i < 5; ++i) {
-        if (symmetry[i * 2] < 0.0 && symmetry[i * 2 + 1] < 0.0)
-            continue;
-        syPs[i] = Point((double)symmetry[i * 2], (double)symmetry[i * 2 + 1]);
-        syN += 1;
-    }
+    findSymmetryPolygon(ps1, n1, syPs, syN);
 
     double grad_S1[18] = {};
     double S1 = intersectAreaO(ps1, n1, syPs, syN, grad_S1);
-    double &S = S_pred;
+    double S = S_pred;
     for (int i = 0; i < n_convex; i++) {
         int grad_point = points_to_convex_ind[i];
         grad_point_temp[2 * grad_point] +=
-            (float)4 * ((2 * S1 - S) / S *
-                        (grad_S1[2 * i] * S - grad_A[2 * i] * S1) / S / S);
-        grad_point_temp[2 * grad_point + 1] =
-            (float)4 *
-            ((2 * S1 - S) / S *
-             (grad_S1[2 * i + 1] * S - grad_A[2 * i + 1] * S1) / S / S);
+            (float) ((2 * S1 - S) / S * (grad_S1[2 * i] * S - grad_A[2 * i] * S1) / S / S);
+        grad_point_temp[2 * grad_point + 1] +=
+            (float) ((2 * S1 - S) / S * (grad_S1[2 * i + 1] * S - grad_A[2 * i + 1] * S1) / S / S);
     }
     // SymmetryIoU
 
@@ -811,7 +911,7 @@ HOST_DEVICE inline float devrSymmetryIOU(T const *const p, T const *const q,
         point_grad[2 * i] = grad_point_temp[2 * i];
         point_grad[2 * i + 1] = grad_point_temp[2 * i + 1];
     }
-    return (float)(rot_giou - (2 * S1 - S) / S * (2 * S1 - S) / S);
+    return (float)(rot_giou - (2 * S1 - S) / S * (2 * S1 - S) / S / 4);
 }
 
 template <typename T>
