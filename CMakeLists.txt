@@ -1,6 +1,7 @@
 project(cuda_gtest_plugin_examples)
 cmake_minimum_required(VERSION 2.8)
 
+set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_PREFIX_PATH $ENV{LIBTORCH_PATH})
 
 set( CUDA_ARCH "sm_86" CACHE STRING "CUDA architecture to compile for" )

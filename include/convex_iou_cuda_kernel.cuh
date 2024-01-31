@@ -703,6 +703,118 @@ HOST_DEVICE inline float devrIoU(T const* const p, T const* const q,
 }
 
 template <typename T>
+HOST_DEVICE inline float devrSymmetryIOU(T const *const p, T const *const q,
+                                         T const *const symmetry, T *point_grad,
+                                         const int idx) {
+    // GIoU 计算
+    Point ps1[MAXN], ps2[MAXN];
+
+    Point convex[MAXN];
+    for (int i = 0; i < 9; i++) {
+        convex[i].x = (double)p[i * 2];
+        convex[i].y = (double)p[i * 2 + 1];
+    }
+    int n_convex = 9;
+    int points_to_convex_ind[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+    Jarvis_and_index(convex, n_convex, points_to_convex_ind);
+
+    int n1 = n_convex;
+    int n2 = 4;
+
+    for (int i = 0; i < n1; i++) {
+        ps1[i].x = (double)convex[i].x;
+        ps1[i].y = (double)convex[i].y;
+    }
+
+    for (int i = 0; i < n2; i++) {
+        ps2[i].x = (double)q[i * 2];
+        ps2[i].y = (double)q[i * 2 + 1];
+    }
+
+    int polygon_index_box_index[18];
+    for (int i = 0; i < n1; i++) {
+        polygon_index_box_index[i] = i;
+        polygon_index_box_index[i + n1] = i;
+    }
+
+    // 预测值 A 的面积对 A 的梯度
+    double grad_A[18] = {};
+    // A B 多边形交集的梯度
+    double grad_AB[18] = {};
+    double grad_C[18] = {};
+
+    double inter_area = intersectAreaO(ps1, n1, ps2, n2, grad_AB);
+    double S_pred =
+        polygon_area_grad(ps1, n1, polygon_index_box_index, n1, grad_A);
+    if (S_pred < 0) {
+        for (int i = 0; i < n_convex * 2; i++) {
+            grad_A[i] = -grad_A[i];
+        }
+    }
+    // 并集的面积 = S_A + S_B - S_AB
+    // 因为 S_B 都是零，所以可以根据 S_A 和 S_AB 的梯度推导出来
+    double union_area = fabs(S_pred) + fabs(area(ps2, n2)) - inter_area;
+
+    double iou = inter_area / union_area;
+    double polygon_area = intersectAreaPoly(ps1, n1, ps2, n2, grad_C);
+
+    //    printf("%d:live\n", idx);
+    double rot_giou = iou - (polygon_area - union_area) / polygon_area;
+
+    float grad_point_temp[18] = {};
+
+    for (int i = 0; i < n_convex; i++) {
+        int grad_point = points_to_convex_ind[i];
+        grad_point_temp[2 * grad_point] =
+            (float)((union_area + inter_area) / (union_area * union_area) *
+                        grad_AB[2 * i] -
+                    iou / union_area * grad_A[2 * i] -
+                    1 / polygon_area * (grad_AB[2 * i] - grad_A[2 * i]) -
+                    (union_area) / polygon_area / polygon_area * grad_C[2 * i]);
+        grad_point_temp[2 * grad_point + 1] =
+            (float)((union_area + inter_area) / (union_area * union_area) *
+                        grad_AB[2 * i + 1] -
+                    iou / union_area * grad_A[2 * i + 1] -
+                    1 / polygon_area *
+                        (grad_AB[2 * i + 1] - grad_A[2 * i + 1]) -
+                    (union_area) / polygon_area / polygon_area *
+                        grad_C[2 * i + 1]);
+    }
+    // GIoU 计算
+
+    // SymmetryIoU
+    Point syPs[6];
+    int syN = 0;
+    for (int i = 0; i < 5; ++i) {
+        if (symmetry[i * 2] < 0.0 && symmetry[i * 2 + 1] < 0.0)
+            continue;
+        syPs[i] = Point((double)symmetry[i * 2], (double)symmetry[i * 2 + 1]);
+        syN += 1;
+    }
+
+    double grad_S1[18] = {};
+    double S1 = intersectAreaO(ps1, n1, syPs, syN, grad_S1);
+    double &S = S_pred;
+    for (int i = 0; i < n_convex; i++) {
+        int grad_point = points_to_convex_ind[i];
+        grad_point_temp[2 * grad_point] +=
+            (float)4 * ((2 * S1 - S) / S *
+                        (grad_S1[2 * i] * S - grad_A[2 * i] * S1) / S / S);
+        grad_point_temp[2 * grad_point + 1] =
+            (float)4 *
+            ((2 * S1 - S) / S *
+             (grad_S1[2 * i + 1] * S - grad_A[2 * i + 1] * S1) / S / S);
+    }
+    // SymmetryIoU
+
+    for (int i = 0; i < 9; i++) {
+        point_grad[2 * i] = grad_point_temp[2 * i];
+        point_grad[2 * i + 1] = grad_point_temp[2 * i + 1];
+    }
+    return (float)(rot_giou - (2 * S1 - S) / S * (2 * S1 - S) / S);
+}
+
+template <typename T>
 __global__ void convex_giou_cuda_kernel(const int ex_n_boxes,
                                         const int gt_n_boxes, const T* ex_boxes,
                                         const T* gt_boxes, T* point_grad) {

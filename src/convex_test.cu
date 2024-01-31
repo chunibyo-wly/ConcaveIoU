@@ -36,6 +36,7 @@ TEST(convex_iou, Jarvis_and_index) {
     for (size_t i = 0; i < n_poly; ++i)
         p_copy[i].x = p[i].x, p_copy[i].y = p[i].y;
 
+    // 计算得到的凸包上的 1,2,3,4,5 个点分别是原来输入的点集里面的几号点
     int points_to_convex_ind[15];
     for (size_t i = 0; i < n_poly; ++i)
         points_to_convex_ind[i] = -1;
@@ -46,6 +47,32 @@ TEST(convex_iou, Jarvis_and_index) {
         ASSERT_FLOAT_EQ(p[i].x, p_copy[points_to_convex_ind[i]].x);
         ASSERT_FLOAT_EQ(p[i].y, p_copy[points_to_convex_ind[i]].y);
     }
+}
+
+TEST(convex_iou, intersectAreaPoly) {
+    int n_poly = 25;
+
+    Point p1[n_poly], p2[n_poly];
+    p1[0] = Point(0, 0), p1[1] = Point(0, 1), p1[2] = Point(1, 0),
+    p1[3] = Point(1, 1), p1[24] = Point(0.5, 2);
+
+    p2[0] = Point(0, 0), p2[1] = Point(0, 1), p2[2] = Point(1, 0),
+    p2[3] = Point(1, 1), p2[24] = Point(0.5, 2);
+
+    for (size_t i = 4; i < n_poly - 1; ++i) {
+        p1[i].x = (double)rand() / INT_MAX, p1[i].y = (double)rand() / INT_MAX;
+        p2[i].x = (double)rand() / INT_MAX, p2[i].y = (double)rand() / INT_MAX;
+    }
+
+    double grad_C[18];
+
+    for (size_t i = 0; i < 18; ++i) {
+        grad_C[i] = (double)rand() / INT_MAX;
+    }
+
+    intersectAreaPoly(p1, n_poly, p2, n_poly, grad_C);
+
+    ASSERT_EQ(0, 0);
 }
 
 #endif
